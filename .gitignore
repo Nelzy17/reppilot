@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+.venv/
+
+# Build output
+.next/
+
+# Environment
+.env
+.env*.local
+
+# Python
+__pycache__/
+
+# OS
+.DS_Store
