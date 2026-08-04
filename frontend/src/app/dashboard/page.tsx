@@ -3,6 +3,8 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { getMe } from "@/lib/api";
+
 // Resource-based protection: the page itself checks auth. The proxy only
 // enables Clerk; it does not gate this route.
 export default async function DashboardPage() {
@@ -10,6 +12,7 @@ export default async function DashboardPage() {
   if (!userId) redirect("/sign-in");
 
   const user = await currentUser();
+  const me = await getMe();
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8 font-sans">
@@ -19,6 +22,23 @@ export default async function DashboardPage() {
         </h1>
         <UserButton />
       </div>
+
+      <section className="w-full max-w-xl">
+        <h2 className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+          GET /me — verified by FastAPI
+        </h2>
+        {me.ok ? (
+          <pre className="overflow-x-auto rounded-lg border border-black/[.08] bg-black/[.03] p-4 text-sm dark:border-white/[.145] dark:bg-white/[.04]">
+            {JSON.stringify(me.data, null, 2)}
+          </pre>
+        ) : (
+          <p className="rounded-lg border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-700 dark:text-red-400">
+            {me.status ? `${me.status} — ` : ""}
+            {me.error}
+          </p>
+        )}
+      </section>
+
       <Link
         href="/"
         className="text-sm text-zinc-600 underline underline-offset-4 dark:text-zinc-400"

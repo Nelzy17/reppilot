@@ -6,3 +6,6 @@ sqlalchemy[asyncio]==2.0.51
 asyncpg==0.31.0
 alembic==1.18.5
 pydantic-settings==2.14.2
+
+# Auth (M3)
+clerk-backend-api==6.0.1

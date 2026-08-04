@@ -10,12 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-## CURRENT STATE
-- **Phase:** M2 complete → M3 next.
-- **Current milestone:** M3 — Clerk JWT verification in FastAPI; frontend calls protected /me.
-- **Last completed:** M2 — FastAPI + Postgres (Neon) + SQLAlchemy 2.0 async + Alembic; users table migrated.
+- **Phase:** M3 complete → M4 next.
+- **Current milestone:** M4 — Clerk webhook → user sync into Postgres.
+- **Last completed:** M3 — Clerk JWT verification in FastAPI (clerk-backend-api SDK, networkless); protected /me; frontend calls it with the Clerk token. 401 verified for missing + garbage tokens; 200 returns clerk_user_id with synced:false.
 - **Blockers:** none
-- **Notes:** DB is Neon Postgres 18; pooled URL for app, direct URL for migrations; both in gitignored backend/.env. Follow-ups still open: (1) 127.0.0.1 backend URL → env var before deploy; (2) npm audit at M15. Also open: stray .git repo somewhere above reppilot — investigate.
+- **Notes:** Backend verifies via CLERK_SECRET_KEY in gitignored backend/.env. /me returns synced:false until M4 creates the DB row. Follow-ups still open: (1) 127.0.0.1 backend URL → env var before deploy; (2) npm audit at M15; (3) optional jwt_key for true networkless verification — logged as possible refinement; (4) stray .git above reppilot — investigate.
 
 ## MILESTONES
 
@@ -23,7 +22,7 @@
 - [x] **M0** Monorepo scaffold; both apps boot; `/health` ok; homepage shows backend status.
 - [x] **M1** Next.js shell + Clerk auth; resource-based route protection; sign-in/up; protected dashboard.
 - [x] **M2** FastAPI + Postgres (Neon) + SQLAlchemy + first migration (`users`).
-- [ ] **M3** Clerk JWT verification in FastAPI; frontend calls protected `/me`.
+- [x] **M3** Clerk JWT verification in FastAPI; frontend calls protected `/me`.
 - [ ] **M4** Clerk webhook → user sync into Postgres.
 - [ ] **M5** PDF upload UI → FastAPI → Vercel Blob; `documents` row created.
 

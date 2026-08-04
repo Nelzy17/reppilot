@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     # Direct endpoint — Alembic migrations (DDL should not go through a pooler).
     DATABASE_URL_DIRECT: str
 
+    # Clerk (M3). CLERK_JWT_KEY is the PEM public key; when present, session-token
+    # verification is networkless. Without it the SDK fetches the JWKS over HTTP
+    # (once per signing key, then cached) using CLERK_SECRET_KEY.
+    CLERK_SECRET_KEY: str = ""
+    CLERK_JWT_KEY: str | None = None
+
     @property
     def async_database_url(self) -> str:
         return to_asyncpg_url(self.DATABASE_URL)
@@ -64,6 +70,17 @@ class Settings(BaseSettings):
     @property
     def async_database_url_direct(self) -> str:
         return to_asyncpg_url(self.DATABASE_URL_DIRECT)
+
+    @property
+    def clerk_jwt_key(self) -> str | None:
+        """The PEM, with literal ``\\n`` escapes turned into real newlines.
+
+        A PEM cannot survive in a .env file as-is (dotenv stops at the first
+        newline), so it is stored single-line and unescaped here.
+        """
+        if not self.CLERK_JWT_KEY:
+            return None
+        return self.CLERK_JWT_KEY.replace("\\n", "\n")
 
 
 @lru_cache
