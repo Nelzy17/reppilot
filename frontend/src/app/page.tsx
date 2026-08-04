@@ -1,3 +1,6 @@
+import { Show, SignInButton, UserButton } from "@clerk/nextjs";
+import Link from "next/link";
+
 // 127.0.0.1, not localhost: Node resolves "localhost" to ::1 (IPv6) first, while
 // uvicorn binds to 127.0.0.1 (IPv4) by default — server-side fetch would ECONNREFUSED.
 const API_URL = "http://127.0.0.1:8000";
@@ -19,11 +22,31 @@ export default async function Home() {
   const status = await getBackendStatus();
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-4 p-8 font-sans">
+    <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8 font-sans">
       <h1 className="text-3xl font-semibold tracking-tight">RepPilot</h1>
       <p className="text-lg text-zinc-600 dark:text-zinc-400">
         Backend status: {status}
       </p>
+
+      <nav className="flex items-center gap-4">
+        <Show when="signed-out">
+          <SignInButton mode="modal">
+            <button className="rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc]">
+              Sign in
+            </button>
+          </SignInButton>
+        </Show>
+
+        <Show when="signed-in">
+          <Link
+            href="/dashboard"
+            className="rounded-full border border-black/[.08] px-5 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a]"
+          >
+            Dashboard
+          </Link>
+          <UserButton />
+        </Show>
+      </nav>
     </main>
   );
 }
