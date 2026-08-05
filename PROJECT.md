@@ -10,11 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M3 complete → M4 next.
-- **Current milestone:** M4 — Clerk webhook → user sync into Postgres.
-- **Last completed:** M3 — Clerk JWT verification in FastAPI (clerk-backend-api SDK, networkless); protected /me; frontend calls it with the Clerk token. 401 verified for missing + garbage tokens; 200 returns clerk_user_id with synced:false.
+- **Phase:** M4 complete → M5 next.
+- **Current milestone:** M5 — PDF upload UI → FastAPI → Vercel Blob; documents row created.
+- **Last completed:** M4 — Clerk webhook (Svix-verified) syncs user.created/updated/deleted into Postgres. Bad-signature → 400 verified; example event → 200; real user synced; /me now returns synced:true.
 - **Blockers:** none
-- **Notes:** Backend verifies via CLERK_SECRET_KEY in gitignored backend/.env. /me returns synced:false until M4 creates the DB row. Follow-ups still open: (1) 127.0.0.1 backend URL → env var before deploy; (2) npm audit at M15; (3) optional jwt_key for true networkless verification — logged as possible refinement; (4) stray .git above reppilot — investigate.
+- **Notes:** Webhook secret in gitignored backend/.env (CLERK_WEBHOOK_SECRET). Local webhook testing via ngrok agent tunnel (dev only; prod URL becomes Render at M15). Follow-ups open: (1) 127.0.0.1 → env var before deploy; (2) npm audit at M15; (3) optional jwt_key networkless refinement; (4) stray .git above reppilot; (5) webhook missing-secret returns 500, consider 400 — minor.
 
 ## MILESTONES
 
@@ -23,7 +23,7 @@
 - [x] **M1** Next.js shell + Clerk auth; resource-based route protection; sign-in/up; protected dashboard.
 - [x] **M2** FastAPI + Postgres (Neon) + SQLAlchemy + first migration (`users`).
 - [x] **M3** Clerk JWT verification in FastAPI; frontend calls protected `/me`.
-- [ ] **M4** Clerk webhook → user sync into Postgres.
+- [x] **M4** Clerk webhook → user sync into Postgres.
 - [ ] **M5** PDF upload UI → FastAPI → Vercel Blob; `documents` row created.
 
 ### Week 2 — Intelligence

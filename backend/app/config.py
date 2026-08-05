@@ -63,6 +63,11 @@ class Settings(BaseSettings):
     CLERK_SECRET_KEY: str = ""
     CLERK_JWT_KEY: str | None = None
 
+    # Svix signing secret for the Clerk webhook (M4). Comes from the Clerk
+    # dashboard's webhook endpoint, NOT the API Keys page — it is per-endpoint,
+    # so each ngrok/production URL has its own value.
+    CLERK_WEBHOOK_SECRET: str = ""
+
     @property
     def async_database_url(self) -> str:
         return to_asyncpg_url(self.DATABASE_URL)
