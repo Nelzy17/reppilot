@@ -3,6 +3,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import DocumentUpload from "@/components/document-upload";
 import { getMe } from "@/lib/api";
 
 // Resource-based protection: the page itself checks auth. The proxy only
@@ -38,6 +39,8 @@ export default async function DashboardPage() {
           </p>
         )}
       </section>
+
+      <DocumentUpload />
 
       <Link
         href="/"

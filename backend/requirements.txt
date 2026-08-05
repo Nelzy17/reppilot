@@ -1,5 +1,8 @@
 fastapi[standard]==0.141.1
 uvicorn==0.52.0
+# Imported directly by app code (app/routers/documents.py), so pinned explicitly
+# rather than relied on as a transitive dep of fastapi[standard].
+httpx==0.28.1
 
 # Database (M2)
 sqlalchemy[asyncio]==2.0.51
@@ -12,3 +15,6 @@ clerk-backend-api==6.0.1
 
 # Webhooks (M4)
 svix==1.99.1
+
+# Blob storage (M5)
+vercel_blob==0.4.2

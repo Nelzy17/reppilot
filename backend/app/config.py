@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     # so each ngrok/production URL has its own value.
     CLERK_WEBHOOK_SECRET: str = ""
 
+    # Vercel Blob static R/W token (M5). Passed explicitly to the vercel_blob
+    # wrapper rather than relying on its os.environ lookup: pydantic-settings
+    # reads .env into this object, it does not export into the process env.
+    BLOB_READ_WRITE_TOKEN: str = ""
+
     @property
     def async_database_url(self) -> str:
         return to_asyncpg_url(self.DATABASE_URL)

@@ -1,8 +1,8 @@
 import { auth } from "@clerk/nextjs/server";
 
-// 127.0.0.1, not localhost: Node resolves "localhost" to ::1 (IPv6) first, while
-// uvicorn binds to 127.0.0.1 (IPv4) by default — server-side fetch would ECONNREFUSED.
-export const API_URL = "http://127.0.0.1:8000";
+import { API_URL } from "@/lib/config";
+
+export { API_URL };
 
 /** Shape returned by GET /me once the M4 webhook has synced the row. */
 export type SyncedMe = {

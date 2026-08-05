@@ -5,6 +5,7 @@ by the time Alembic autogenerate inspects it — otherwise autogenerate sees an
 empty schema and emits a migration that drops tables.
 """
 
+from app.models.document import Document
 from app.models.user import User
 
-__all__ = ["User"]
+__all__ = ["Document", "User"]
