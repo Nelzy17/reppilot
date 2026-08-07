@@ -10,11 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M4 complete → M5 next.
-- **Current milestone:** M5 — PDF upload UI → FastAPI → Vercel Blob; documents row created.
-- **Last completed:** M4 — Clerk webhook (Svix-verified) syncs user.created/updated/deleted into Postgres. Bad-signature → 400 verified; example event → 200; real user synced; /me now returns synced:true.
+- **Phase:** M7 complete → M8 next.
+- **Current milestone:** M8 — vector search endpoint (query → top-k chunks).
+- **Last completed:** M7 — OpenAI embeddings (text-embedding-3-small, 1536-dim) + Qdrant upsert; qdrant_point_id backfilled; status→ready. Verified: embedded_count = Postgres non-null = Qdrant points_count = 2.
 - **Blockers:** none
-- **Notes:** Webhook secret in gitignored backend/.env (CLERK_WEBHOOK_SECRET). Local webhook testing via ngrok agent tunnel (dev only; prod URL becomes Render at M15). Follow-ups open: (1) 127.0.0.1 → env var before deploy; (2) npm audit at M15; (3) optional jwt_key networkless refinement; (4) stray .git above reppilot; (5) webhook missing-secret returns 500, consider 400 — minor.
+- **Notes:** Qdrant collection reppilot_chunks (1536/cosine) with payload indexes on document_id, chunk_index, user_id (required before filtering — see D-011). University network blocks port 5432; use hotspot/VPN for local DB access (irrelevant in prod). Follow-ups open: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key refinement; (4) stray .git; (5) webhook 500→400; (6) Blob helper x-api-version 12; (7) remove Process-dev + Embed-dev buttons before ship; (8) M6 extraction fidelity re-test at M8 (D-010).
 
 ## MILESTONES
 
@@ -24,7 +24,7 @@
 - [x] **M2** FastAPI + Postgres (Neon) + SQLAlchemy + first migration (`users`).
 - [x] **M3** Clerk JWT verification in FastAPI; frontend calls protected `/me`.
 - [x] **M4** Clerk webhook → user sync into Postgres.
-- [ ] **M5** PDF upload UI → FastAPI → Vercel Blob; `documents` row created.
+- [x] **M5** PDF upload UI → FastAPI → Vercel Blob; `documents` row created.
 
 ### Week 2 — Intelligence
 - [ ] **M6** PDF parsing + chunking; `document_chunks` populated.

@@ -1,8 +1,8 @@
-"""PDF upload.
+"""PDF upload and processing.
 
-Flow is browser -> FastAPI -> Vercel Blob (decision D-003 / Option A). The file
-passes through this service: the frontend never talks to Blob directly, which
-keeps the UI-only contract and leaves the bytes here for M6 to parse.
+Upload flow is browser -> FastAPI -> Vercel Blob (decision D-003 / Option A).
+The file passes through this service: the frontend never talks to Blob
+directly, which keeps the UI-only contract and leaves the bytes here to parse.
 """
 
 import logging
@@ -19,13 +19,27 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.clerk import get_current_user_id
 from app.config import get_settings
 from app.db.session import get_db
-from app.models import Document, User
+from app.models import Document, DocumentChunk, User
+from app.services.chunking import chunk_markdown, has_meaningful_text
+from app.services.embeddings import EmbeddingError, embed_texts
+from app.services.pdf_processing import (
+    PdfProcessingError,
+    extract_document_markdown,
+)
+from app.services.vector_store import (
+    VectorStoreError,
+    count_document_points,
+    delete_stale_points,
+    ensure_collection,
+    point_id_for,
+    upsert_chunk_points,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +102,53 @@ def _safe_filename(raw: str | None) -> str:
         name = f"{name or 'upload'}.pdf"
     # Vercel caps pathname length; leave room for the prefix and random suffix.
     return name[-120:]
+
+
+async def _require_user(db: AsyncSession, clerk_user_id: str) -> User:
+    user = (
+        await db.execute(select(User).where(User.clerk_user_id == clerk_user_id))
+    ).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No user record for this account yet; try again shortly",
+        )
+    return user
+
+
+@router.get("")
+async def list_documents(
+    clerk_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """The requesting user's documents, newest first.
+
+    Scoped to the caller by user_id — there is no way to ask for someone else's.
+    """
+    user = await _require_user(db, clerk_user_id)
+
+    rows = (
+        (
+            await db.execute(
+                select(Document)
+                .where(Document.user_id == user.id)
+                .order_by(Document.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return [
+        {
+            "id": str(doc.id),
+            "filename": doc.filename,
+            "status": doc.status,
+            "page_count": doc.page_count,
+            "created_at": doc.created_at.isoformat(),
+        }
+        for doc in rows
+    ]
 
 
 async def _read_capped(upload: UploadFile) -> bytes:
@@ -204,4 +265,350 @@ async def upload_document(
         "id": str(document.id),
         "filename": document.filename,
         "status": document.status,
+    }
+
+
+# --------------------------------------------------------------------------
+# Processing (M6): extract text -> chunk -> populate document_chunks
+# --------------------------------------------------------------------------
+
+# An image-only scan extracts to page separators and whitespace. Require some
+# real content before believing the extraction succeeded.
+MIN_EXTRACTED_CHARS = 50
+
+
+async def _mark_failed(db: AsyncSession, document_id: uuid.UUID) -> None:
+    """Flip the document to 'failed' in its own transaction.
+
+    Called after the work transaction has been rolled back, so the status
+    update survives; a document must never be left stuck on 'processing'.
+    """
+    try:
+        await db.rollback()
+        await db.execute(
+            update(Document).where(Document.id == document_id).values(status="failed")
+        )
+        await db.commit()
+    except Exception:  # pragma: no cover - best effort
+        logger.exception("Could not mark document %s as failed", document_id)
+
+
+@router.post("/{document_id}/process")
+async def process_document(
+    document_id: uuid.UUID,
+    clerk_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Extract, chunk, and store chunks for a previously uploaded PDF.
+
+    Re-running replaces the document's chunks rather than appending, so a retry
+    after a failure is safe.
+    """
+    user = (
+        await db.execute(select(User).where(User.clerk_user_id == clerk_user_id))
+    ).scalar_one_or_none()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No user record for this account yet; try again shortly",
+        )
+
+    # Ownership is part of the lookup: another user's document is reported as
+    # missing rather than forbidden, so the endpoint can't confirm it exists.
+    # FOR UPDATE serialises concurrent processing of the same document, which
+    # is what stops a double-submit from producing two sets of chunks.
+    document = (
+        await db.execute(
+            select(Document)
+            .where(Document.id == document_id, Document.user_id == user.id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
+
+    try:
+        markdown, page_count = await extract_document_markdown(document)
+    except PdfProcessingError as exc:
+        logger.warning("Extraction failed for document %s: %s", document_id, exc)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Could not process the PDF: {exc}",
+        ) from exc
+    except Exception as exc:
+        logger.exception("Unexpected extraction error for document %s", document_id)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected error while processing the PDF",
+        ) from exc
+
+    stripped = (markdown or "").strip()
+    if (
+        len(stripped) < MIN_EXTRACTED_CHARS
+        or not has_meaningful_text(stripped)
+    ):
+        logger.warning(
+            "Document %s extracted only %d chars; treating as no text",
+            document_id,
+            len(stripped),
+        )
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "No selectable text found in this PDF. It is most likely a "
+                "scanned or image-only document, which needs OCR before it can "
+                "be processed."
+            ),
+        )
+
+    try:
+        chunks = chunk_markdown(stripped)
+    except Exception as exc:
+        logger.exception("Chunking failed for document %s", document_id)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected error while splitting the document into chunks",
+        ) from exc
+
+    if not chunks:
+        logger.warning("Chunking produced no chunks for document %s", document_id)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Extracted text could not be split into any usable chunks",
+        )
+
+    try:
+        # Replace, don't append: reprocessing must not duplicate chunks.
+        await db.execute(
+            delete(DocumentChunk).where(DocumentChunk.document_id == document.id)
+        )
+        db.add_all(
+            [
+                DocumentChunk(
+                    document_id=document.id,
+                    chunk_index=chunk["chunk_index"],
+                    content=chunk["content"],
+                    token_count=chunk["token_count"],
+                )
+                for chunk in chunks
+            ]
+        )
+        document.page_count = page_count
+        document.status = "ready"
+        await db.commit()
+    except Exception as exc:
+        logger.exception("Failed to persist chunks for document %s", document_id)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to save the document chunks",
+        ) from exc
+
+    total_tokens = sum(chunk["token_count"] for chunk in chunks)
+    logger.info(
+        "Processed document %s: %d page(s), %d chunk(s), %d tokens",
+        document_id,
+        page_count,
+        len(chunks),
+        total_tokens,
+    )
+
+    return {
+        "id": str(document.id),
+        "status": document.status,
+        "page_count": page_count,
+        "chunk_count": len(chunks),
+        "total_tokens": total_tokens,
+    }
+
+
+# --------------------------------------------------------------------------
+# Embedding (M7): chunks -> OpenAI vectors -> Qdrant -> qdrant_point_id
+# --------------------------------------------------------------------------
+
+
+@router.post("/{document_id}/embed")
+async def embed_document(
+    document_id: uuid.UUID,
+    clerk_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Embed a processed document's chunks and store the vectors in Qdrant.
+
+    Re-runnable: point ids are derived from (document_id, chunk_index), so a
+    second run overwrites the same points rather than duplicating them.
+    """
+    user = await _require_user(db, clerk_user_id)
+
+    document = (
+        await db.execute(
+            select(Document)
+            .where(Document.id == document_id, Document.user_id == user.id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if document is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        )
+
+    chunks = (
+        (
+            await db.execute(
+                select(DocumentChunk)
+                .where(DocumentChunk.document_id == document.id)
+                .order_by(DocumentChunk.chunk_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    # Refuse before spending anything at OpenAI. Status is left alone: an
+    # unchunked document has not failed at embedding, it simply is not ready
+    # for it.
+    if not chunks:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Document has no chunks; run /process first",
+        )
+
+    try:
+        vectors = await embed_texts([chunk.content for chunk in chunks])
+    except EmbeddingError as exc:
+        logger.warning("Embedding failed for document %s: %s", document_id, exc)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not generate embeddings: {exc}",
+        ) from exc
+    except Exception as exc:
+        logger.exception("Unexpected embedding error for document %s", document_id)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected error while generating embeddings",
+        ) from exc
+
+    # Belt and braces: embed_texts already checks this, but a mismatch here
+    # would silently pair vectors with the wrong chunks.
+    if len(vectors) != len(chunks):
+        logger.error(
+            "Embedding count mismatch for %s: %d vectors for %d chunks",
+            document_id,
+            len(vectors),
+            len(chunks),
+        )
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Embedding count mismatch: got {len(vectors)} vectors for "
+                f"{len(chunks)} chunks"
+            ),
+        )
+
+    points = [
+        {
+            "id": point_id_for(document.id, chunk.chunk_index),
+            "vector": vector,
+            "payload": {
+                "document_id": str(document.id),
+                "chunk_index": chunk.chunk_index,
+                "user_id": str(user.id),
+            },
+        }
+        for chunk, vector in zip(chunks, vectors)
+    ]
+
+    try:
+        await ensure_collection()
+        await upsert_chunk_points(points)
+        # If a previous run produced more chunks than this one, drop the surplus.
+        await delete_stale_points(document.id, keep_below_index=len(chunks))
+        stored = await count_document_points(document.id)
+    except VectorStoreError as exc:
+        logger.warning("Qdrant write failed for document %s: %s", document_id, exc)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not store vectors: {exc}",
+        ) from exc
+    except Exception as exc:
+        logger.exception("Unexpected vector store error for document %s", document_id)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected error while storing vectors",
+        ) from exc
+
+    if stored != len(chunks):
+        logger.error(
+            "Qdrant holds %d points for document %s but there are %d chunks",
+            stored,
+            document_id,
+            len(chunks),
+        )
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                f"Vector store holds {stored} points for {len(chunks)} chunks; "
+                "refusing to mark the document ready"
+            ),
+        )
+
+    try:
+        for chunk, point in zip(chunks, points):
+            chunk.qdrant_point_id = point["id"]
+        await db.flush()
+
+        # Never mark ready on a partially-linked document.
+        unlinked = (
+            await db.execute(
+                select(func.count())
+                .select_from(DocumentChunk)
+                .where(
+                    DocumentChunk.document_id == document.id,
+                    DocumentChunk.qdrant_point_id.is_(None),
+                )
+            )
+        ).scalar_one()
+        if unlinked:
+            raise RuntimeError(f"{unlinked} chunk(s) still have no point id")
+
+        document.status = "ready"
+        await db.commit()
+    except Exception as exc:
+        logger.exception("Failed to link point ids for document %s", document_id)
+        await _mark_failed(db, document_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to record vector ids against the chunks",
+        ) from exc
+
+    settings = get_settings()
+    logger.info(
+        "Embedded document %s: %d chunk(s) -> %s",
+        document_id,
+        len(chunks),
+        settings.QDRANT_COLLECTION,
+    )
+
+    return {
+        "id": str(document.id),
+        "status": document.status,
+        "chunk_count": len(chunks),
+        "embedded_count": len(vectors),
+        "points_in_collection": stored,
+        "model": settings.EMBEDDING_MODEL,
+        "dimensions": settings.EMBEDDING_DIMENSIONS,
+        "collection": settings.QDRANT_COLLECTION,
     }

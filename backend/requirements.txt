@@ -18,3 +18,11 @@ svix==1.99.1
 
 # Blob storage (M5)
 vercel_blob==0.4.2
+
+# PDF parsing + chunking (M6). pymupdf4llm is AGPL-licensed.
+pymupdf4llm==1.28.0
+tiktoken==0.13.0
+
+# Embeddings + vector store (M7). Official SDKs, used directly (D-002: no LangChain).
+openai==2.53.0
+qdrant-client==1.19.0

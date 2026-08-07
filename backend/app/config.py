@@ -73,6 +73,18 @@ class Settings(BaseSettings):
     # reads .env into this object, it does not export into the process env.
     BLOB_READ_WRITE_TOKEN: str = ""
 
+    # Embeddings + vector store (M7).
+    OPENAI_API_KEY: str = ""
+    QDRANT_URL: str = ""
+    QDRANT_API_KEY: str = ""
+
+    # Swappable so a future model change is a config edit, not a code change.
+    # EMBEDDING_DIMENSIONS must match the Qdrant collection's vector size: change
+    # both together, and re-embed, or existing points become unusable.
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    EMBEDDING_DIMENSIONS: int = 1536
+    QDRANT_COLLECTION: str = "reppilot_chunks"
+
     @property
     def async_database_url(self) -> str:
         return to_asyncpg_url(self.DATABASE_URL)

@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
 import { API_URL, MAX_UPLOAD_BYTES } from "@/lib/config";
@@ -13,6 +14,7 @@ type UploadState =
 
 export default function DocumentUpload() {
   const { getToken } = useAuth();
+  const router = useRouter();
   const [file, setFile] = useState<File | null>(null);
   const [state, setState] = useState<UploadState>({ kind: "idle" });
   const inputRef = useRef<HTMLInputElement>(null);
@@ -69,6 +71,9 @@ export default function DocumentUpload() {
       });
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
+      // The document list is server-rendered; pull it again so the new row
+      // (and its status) appears without a manual reload.
+      router.refresh();
     } catch {
       setState({ kind: "error", message: "Could not reach the backend" });
     }
