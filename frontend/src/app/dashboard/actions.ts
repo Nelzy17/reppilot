@@ -4,7 +4,14 @@ import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 
 import { API_URL } from "@/lib/config";
-import type { EmbedResult, ProcessResult } from "@/lib/types";
+import type {
+  EmbedResult,
+  ProcessResult,
+  SearchHit,
+  SearchResult,
+} from "@/lib/types";
+
+const SEARCH_K = 5;
 
 /**
  * DEV/TESTING ONLY (M6 aid) — kick off backend processing for one document.
@@ -136,6 +143,69 @@ export async function embedDocumentAction(
       chunk_count: Number(data.chunk_count ?? 0),
       embedded_count: Number(data.embedded_count ?? 0),
       points_in_collection: Number(data.points_in_collection ?? 0),
+    };
+  } catch {
+    return { kind: "error", message: "Could not reach the backend" };
+  }
+}
+
+/**
+ * DEV/TESTING ONLY (M8 aid) — vector search over the caller's own chunks.
+ *
+ * Same server-side token pattern as the Process/Embed actions: the Clerk token
+ * is attached here, never in the browser. Auth is re-checked because Server
+ * Functions are reachable by direct POST; the backend scopes the search to the
+ * verified user's own vectors regardless.
+ *
+ * Read-only, so no revalidatePath — nothing on the page has changed.
+ */
+export async function searchAction(
+  _previous: SearchResult,
+  formData: FormData,
+): Promise<SearchResult> {
+  const query = String(formData.get("query") ?? "").trim();
+  if (!query) {
+    return { kind: "error", message: "Enter a query first" };
+  }
+
+  const { userId, getToken } = await auth();
+  if (!userId) {
+    return { kind: "error", message: "Not signed in" };
+  }
+
+  const token = await getToken();
+  if (!token) {
+    return { kind: "error", message: "No Clerk session token" };
+  }
+
+  try {
+    const res = await fetch(`${API_URL}/search`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ query, k: SEARCH_K }),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        if (typeof body?.detail === "string") detail = body.detail;
+      } catch {
+        /* non-JSON error body */
+      }
+      return { kind: "error", message: `${res.status} — ${detail}` };
+    }
+
+    // The endpoint returns a bare array; an empty one is a valid "no matches".
+    const hits = (await res.json()) as SearchHit[];
+    return {
+      kind: "success",
+      query,
+      hits: Array.isArray(hits) ? hits : [],
     };
   } catch {
     return { kind: "error", message: "Could not reach the backend" };

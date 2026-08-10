@@ -3,6 +3,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import DevSearch from "@/components/dev-search";
 import DocumentList from "@/components/document-list";
 import DocumentUpload from "@/components/document-upload";
 import { getDocuments, getMe } from "@/lib/api";
@@ -49,7 +50,8 @@ export default async function DashboardPage() {
             Your documents
           </h2>
           <span className="text-xs text-amber-700 dark:text-amber-400">
-            &ldquo;Process&rdquo; is a temporary M6 testing control
+            &ldquo;Process&rdquo; / &ldquo;Embed&rdquo; are temporary testing
+            controls
           </span>
         </div>
         {documents.ok ? (
@@ -61,6 +63,8 @@ export default async function DashboardPage() {
           </p>
         )}
       </section>
+
+      <DevSearch documents={documents.ok ? documents.data : []} />
 
       <Link
         href="/"

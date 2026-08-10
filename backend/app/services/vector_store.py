@@ -181,6 +181,69 @@ async def delete_stale_points(
         raise VectorStoreError(f"Qdrant cleanup failed: {exc}") from exc
 
 
+async def search_chunks(
+    query_vector: list[float],
+    user_id: uuid.UUID | str,
+    limit: int,
+    score_threshold: float | None = None,
+    client: AsyncQdrantClient | None = None,
+) -> list[dict[str, Any]]:
+    """Top-``limit`` nearest points **belonging to this user**.
+
+    The user_id filter is the multi-tenancy boundary: it is applied inside
+    Qdrant so another tenant's vectors are never even candidates for scoring.
+    Requires the payload index on user_id (see PAYLOAD_INDEXES).
+
+    Returns ``[{point_id, score, document_id, chunk_index}]`` ordered by score
+    descending, or ``[]`` when nothing matches — an empty result is a normal
+    outcome, not an error.
+    """
+    settings = get_settings()
+    client = client or get_qdrant_client()
+
+    try:
+        response = await client.query_points(
+            collection_name=settings.QDRANT_COLLECTION,
+            query=query_vector,
+            limit=limit,
+            query_filter=models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="user_id",
+                        match=models.MatchValue(value=str(user_id)),
+                    )
+                ]
+            ),
+            score_threshold=score_threshold,
+            with_payload=True,
+            with_vectors=False,  # the text lives in Postgres; vectors aren't needed
+        )
+    except Exception as exc:
+        # Nothing embedded yet means no collection. That is an empty result,
+        # not a failure — only a real fault should surface as an error.
+        try:
+            missing = not await client.collection_exists(settings.QDRANT_COLLECTION)
+        except Exception:
+            missing = False
+        if missing:
+            logger.info(
+                "Collection %s does not exist yet; returning no results",
+                settings.QDRANT_COLLECTION,
+            )
+            return []
+        raise VectorStoreError(f"Qdrant search failed: {exc}") from exc
+
+    return [
+        {
+            "point_id": str(point.id),
+            "score": float(point.score),
+            "document_id": (point.payload or {}).get("document_id"),
+            "chunk_index": (point.payload or {}).get("chunk_index"),
+        }
+        for point in response.points
+    ]
+
+
 async def count_document_points(
     document_id: uuid.UUID | str,
     client: AsyncQdrantClient | None = None,

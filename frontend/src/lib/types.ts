@@ -22,6 +22,21 @@ export type ProcessResult =
     }
   | { kind: "error"; message: string };
 
+/** One hit from POST /search. */
+export type SearchHit = {
+  chunk_id: string;
+  document_id: string;
+  chunk_index: number;
+  content: string;
+  score: number;
+};
+
+/** Result of the dev-only "Search" action. */
+export type SearchResult =
+  | { kind: "idle" }
+  | { kind: "success"; query: string; hits: SearchHit[] }
+  | { kind: "error"; message: string };
+
 /** Result of the dev-only "Embed" action. */
 export type EmbedResult =
   | { kind: "idle" }

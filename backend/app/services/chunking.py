@@ -18,8 +18,14 @@ The shape of the algorithm:
    (``OVERLAP_TOKENS``) so context spans the seam.
 
 Sizing: the body cap is ``MAX_TOKENS - OVERLAP_TOKENS``, so a finished chunk —
-overlap included — is never larger than ``MAX_TOKENS``. Typical bodies land in
-the 500-700 range, i.e. the ~500-800 target with ~12.5% overlap.
+overlap included — is never larger than ``MAX_TOKENS``. Typical finished chunks
+land in the 250-350 range, i.e. the ~250-350 target with ~15% overlap.
+
+These targets were reduced from ~500-800. At the larger size a short document
+collapsed into one or two chunks, so every query retrieved most of the document
+and cosine scores were both low and undiscriminating. Smaller chunks let an
+individual labelled section — contraindications, dosing, warnings — be its own
+chunk (or two), which is what makes section-specific queries separable.
 """
 
 import re
@@ -32,11 +38,13 @@ import tiktoken
 # counts stay meaningful when M7 embeds these same chunks.
 ENCODING_NAME = "cl100k_base"
 
-MAX_TOKENS = 800  # hard cap on a finished chunk, overlap included
-OVERLAP_TOKENS = 100  # 12.5% of MAX_TOKENS
-BODY_MAX_TOKENS = MAX_TOKENS - OVERLAP_TOKENS  # 700
-TARGET_MIN_TOKENS = 500  # only used to decide whether to merge a stub tail
-MIN_TAIL_TOKENS = 100  # a trailing chunk smaller than this is merged back
+MAX_TOKENS = 350  # hard cap on a finished chunk, overlap included
+OVERLAP_TOKENS = 50  # ~15% of MAX_TOKENS
+BODY_MAX_TOKENS = MAX_TOKENS - OVERLAP_TOKENS  # 300
+# Documents the intended lower end of the band; not enforced anywhere — a
+# section shorter than this legitimately becomes a small chunk of its own.
+TARGET_MIN_TOKENS = 250
+MIN_TAIL_TOKENS = 50  # a trailing chunk smaller than this is merged back
 
 _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+\S")
 _FENCE_RE = re.compile(r"^\s*```")

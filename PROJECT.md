@@ -10,11 +10,12 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M7 complete → M8 next.
-- **Current milestone:** M8 — vector search endpoint (query → top-k chunks).
-- **Last completed:** M7 — OpenAI embeddings (text-embedding-3-small, 1536-dim) + Qdrant upsert; qdrant_point_id backfilled; status→ready. Verified: embedded_count = Postgres non-null = Qdrant points_count = 2.
+- **Phase:** M8 complete → M9 next.
+- **Current milestone:** M9 — AI chat over docs (RAG + streaming), persisted sessions.
+- **Last completed:** M8 — vector search endpoint (query → embed → Qdrant top-k, user-scoped → join chunk text from Postgres). Retrieval validated across three queries: relevant queries surface the correct chunks (contraindications 0.42, renal dose 0.50), off-topic control near-zero (~0.00). Chunk size tuned down to ~250-350 tokens (from ~500-800), lifting relevant scores ~0.35 → 0.50 and giving clean query discrimination.
 - **Blockers:** none
-- **Notes:** Qdrant collection reppilot_chunks (1536/cosine) with payload indexes on document_id, chunk_index, user_id (required before filtering — see D-011). University network blocks port 5432; use hotspot/VPN for local DB access (irrelevant in prod). Follow-ups open: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key refinement; (4) stray .git; (5) webhook 500→400; (6) Blob helper x-api-version 12; (7) remove Process-dev + Embed-dev buttons before ship; (8) M6 extraction fidelity re-test at M8 (D-010).
+- **Notes:** D-010 RESOLVED — coarse chunking (2 chunks/4pp) was the real cause of weak retrieval, not the extractor; halving chunk size fixed it. Residual table-cell label damage from pymupdf4llm persists but the dosing *section* retrieves correctly — accepted for synthetic demo; production with real clinical tables would warrant a dedicated table extractor. Derived a retrieval score threshold for M9: relevant ≥0.42, noise ≤0.01, so a ~0.2 cutoff cleanly separates them (use for the "I don't know" path). Qdrant collection reppilot_chunks (1536/cosine) has payload indexes on document_id, chunk_index, user_id (D-011). University network blocks port 5432 → hotspot/VPN for local DB (irrelevant in prod).
+  Open follow-ups: (1) 127.0.0.1 backend URL → env var before deploy; (2) npm audit at M15; (3) optional jwt_key networkless refinement; (4) stray .git above reppilot; (5) webhook missing-secret 500→400 (minor); (6) Blob helper pinned x-api-version 12; (7) remove Process/Embed/Search dev controls before ship; (8) dedicated table extractor for prod (D-010 residual).
 
 ## MILESTONES
 
@@ -27,9 +28,9 @@
 - [x] **M5** PDF upload UI → FastAPI → Vercel Blob; `documents` row created.
 
 ### Week 2 — Intelligence
-- [ ] **M6** PDF parsing + chunking; `document_chunks` populated.
-- [ ] **M7** Embedding generation + Qdrant upsert; document status → ready.
-- [ ] **M8** Vector search endpoint (query → top-k chunks).
+- [x] **M6** PDF parsing + chunking; `document_chunks` populated.
+- [x] **M7** Embedding generation + Qdrant upsert; document status → ready.
+- [x] **M8** Vector search endpoint (query → top-k chunks).
 - [ ] **M9** AI chat over docs (RAG + streaming), persisted sessions.
 - [ ] **M10** Meeting Prep agent (structured input → structured brief).
 
