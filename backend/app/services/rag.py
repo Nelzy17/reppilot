@@ -10,6 +10,7 @@ Direct OpenAI SDK + Qdrant (decision D-002: no LangChain).
 """
 
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -74,6 +75,73 @@ def _build_context(passages: list[dict[str, Any]]) -> str:
             f'"""\n{passage["content"]}\n"""'
         )
     return "\n\n".join(blocks)
+
+
+def build_messages(passages: list[dict[str, Any]], query: str) -> list[dict[str, str]]:
+    """The exact message list sent to the model.
+
+    Shared by the streaming and non-streaming paths so the grounding rules
+    cannot drift between them.
+    """
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": f"Context:\n\n{_build_context(passages)}\n\nQuestion: {query}",
+        },
+    ]
+
+
+def cite(passages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Citations built from what was actually retrieved, never from model prose."""
+    return [
+        {
+            "document": p["document"],
+            "chunk_index": p["chunk_index"],
+            "score": p["score"],
+        }
+        for p in passages
+    ]
+
+
+async def stream_answer_deltas(
+    passages: list[dict[str, Any]], query: str
+) -> AsyncIterator[str]:
+    """Yield answer text fragments as the model produces them.
+
+    Only ever called with a non-empty ``passages`` — the threshold gate runs
+    before the stream is opened, so an unsupported question never reaches the
+    model at all.
+    """
+    settings = get_settings()
+    client = get_openai_client()
+
+    try:
+        stream = await client.chat.completions.create(
+            model=settings.CHAT_MODEL,
+            temperature=TEMPERATURE,
+            max_tokens=MAX_ANSWER_TOKENS,
+            stream=True,
+            messages=build_messages(passages, query),
+        )
+    except openai.APIError as exc:
+        raise ChatError(f"The model request failed: {exc}") from exc
+    except Exception as exc:
+        raise ChatError(f"Could not reach the model: {exc}") from exc
+
+    try:
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+    except openai.APIError as exc:
+        # Mid-stream faults (rate limit, upstream error) surface here, after
+        # some text may already have been sent.
+        raise ChatError(f"The model stream failed: {exc}") from exc
+    except Exception as exc:
+        raise ChatError(f"The model stream was interrupted: {exc}") from exc
 
 
 async def retrieve(
@@ -166,20 +234,13 @@ async def answer_question(
 
     settings = get_settings()
     client = get_openai_client()
-    context = _build_context(passages)
 
     try:
         response = await client.chat.completions.create(
             model=settings.CHAT_MODEL,
             temperature=TEMPERATURE,
             max_tokens=MAX_ANSWER_TOKENS,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": f"Context:\n\n{context}\n\nQuestion: {query}",
-                },
-            ],
+            messages=build_messages(passages, query),
         )
     except openai.APIError as exc:
         raise ChatError(f"The model request failed: {exc}") from exc
@@ -191,16 +252,7 @@ async def answer_question(
     if not answer:
         raise ChatError("The model returned an empty answer")
 
-    # Cite only what was actually retrieved — the sources are built from the
-    # passages, never parsed back out of the model's prose.
-    sources = [
-        {
-            "document": p["document"],
-            "chunk_index": p["chunk_index"],
-            "score": p["score"],
-        }
-        for p in passages
-    ]
+    sources = cite(passages)
 
     logger.info(
         "Answered from %d passage(s) using %s", len(passages), settings.CHAT_MODEL
