@@ -239,12 +239,20 @@ export default function ChatView() {
             </span>
             <h1 className="truncate text-sm text-muted">Document assistant</h1>
           </div>
-          <a
-            href="/dashboard"
-            className="shrink-0 rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:text-ink"
-          >
-            Documents
-          </a>
+          <nav className="flex shrink-0 items-center gap-1">
+            <a
+              href="/prep"
+              className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:text-ink"
+            >
+              Meeting prep
+            </a>
+            <a
+              href="/dashboard"
+              className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:text-ink"
+            >
+              Documents
+            </a>
+          </nav>
         </div>
       </header>
 

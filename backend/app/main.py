@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import chat, documents, me, search, webhooks
+from app.routers import chat, documents, me, meeting_prep, search, webhooks
 
 SERVICE_NAME = "reppilot-api"
 
@@ -21,6 +21,7 @@ app.include_router(webhooks.router)
 app.include_router(documents.router)
 app.include_router(search.router)
 app.include_router(chat.router)
+app.include_router(meeting_prep.router)
 
 
 @app.get("/health")

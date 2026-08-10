@@ -10,11 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M9 complete (both halves) → M10 next.
-- **Current milestone:** M10 — Meeting Prep agent (structured input → structured brief).
-- **Last completed:** M9 — grounded RAG chat, complete. M9a: non-streaming /chat (threshold gate, grounding prompt, sessions, injection-resistant). M9b: streaming /chat/stream (SSE, token-by-token) + polished /chat page (message bubbles, live streaming, first-class source citations with scores, grounded/refused states). Verified: streams live, grounded answers cited, "bake bread" refuses cleanly, injection PDF treated as data.
+- **Phase:** M10 complete → M11 next.
+- **Current milestone:** M11 — Roleplay session create + persona system prompts.
+- **Last completed:** M10 — Meeting Prep agent. Structured form input → grounded structured brief (Structured Outputs / Pydantic schema, single gpt-4o-mini call) with talking points, product highlights, objections+responses, follow-ups, and a forced grounding_note declaring document gaps. Persisted to meeting_preps. /prep page. Verified: all claims grounded (no invented efficacy/dosing/pricing), grounding_note honestly lists gaps, no-coverage product ("Zorblax") correctly refused.
 - **Blockers:** none
-- **Notes:** gpt-4o-mini via Chat Completions. Injection_Test.pdf test data deleted post-test. Cross-document retrieval observed — a query can cite chunks from unrelated docs (noted for future: relevance floor on displayed sources, or per-document scoping). Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove dev controls from dashboard before ship; (8) prod table extractor (D-010 residual); (9) source relevance floor / per-doc chat scoping; (10) session sidebar/history (backend ready, UI deferred).
+- **Notes:** Structured Outputs (json_schema via Pydantic) guarantees brief sections. grounding_note field is the safety mechanism — forces explicit gap-declaration vs silent fabrication. Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
 
 ## MILESTONES
 
@@ -31,7 +31,7 @@
 - [x] **M7** Embedding generation + Qdrant upsert; document status → ready.
 - [x] **M8** Vector search endpoint (query → top-k chunks).
 - [x] **M9** AI chat over docs (RAG + streaming), persisted sessions.
-- [ ] **M10** Meeting Prep agent (structured input → structured brief).
+- [x] **M10** Meeting Prep agent (structured input → structured brief).
 
 ### Week 3 — Simulation + Ship
 - [ ] **M11** Roleplay session create + persona system prompts.

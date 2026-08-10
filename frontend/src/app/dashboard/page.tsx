@@ -27,12 +27,20 @@ export default async function DashboardPage() {
         <UserButton />
       </div>
 
-      <Link
-        href="/chat"
-        className="rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
-      >
-        Open document assistant →
-      </Link>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <Link
+          href="/chat"
+          className="rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
+        >
+          Open document assistant →
+        </Link>
+        <Link
+          href="/prep"
+          className="rounded-full border border-black/[.12] px-5 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.2] dark:hover:bg-white/[.06]"
+        >
+          Meeting prep →
+        </Link>
+      </div>
 
       <section className="w-full max-w-xl">
         <h2 className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">

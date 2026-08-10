@@ -44,6 +44,33 @@ export type ChatSource = {
   score: number;
 };
 
+/** The structured brief returned by POST /meeting-prep. */
+export type MeetingBrief = {
+  talking_points: string[];
+  product_highlights: string[];
+  likely_objections: { objection: string; suggested_response: string }[];
+  follow_up_recommendations: string[];
+  grounding_note: string;
+};
+
+export type MeetingPrepRecord = {
+  id: string;
+  physician_name: string | null;
+  specialty: string | null;
+  product: string;
+  objective: string;
+  brief: MeetingBrief;
+  sources: ChatSource[];
+  created_at: string;
+};
+
+export type PrepResult =
+  | { kind: "idle" }
+  | { kind: "success"; prep: MeetingPrepRecord }
+  /** The documents genuinely can't support a brief — not a system failure. */
+  | { kind: "no_coverage"; message: string }
+  | { kind: "error"; message: string };
+
 /** Result of the dev-only chat action. */
 export type ChatResult =
   | { kind: "idle" }
