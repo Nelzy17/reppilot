@@ -27,6 +27,13 @@ export default async function DashboardPage() {
         <UserButton />
       </div>
 
+      <Link
+        href="/chat"
+        className="rounded-full bg-foreground px-5 py-2 text-sm font-medium text-background transition-opacity hover:opacity-90"
+      >
+        Open document assistant →
+      </Link>
+
       <section className="w-full max-w-xl">
         <h2 className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
           GET /me — verified by FastAPI

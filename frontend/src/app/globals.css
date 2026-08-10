@@ -3,6 +3,52 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* ---------------------------------------------------------------------
+     RepPilot palette — "clinical instrument".
+     Neutrals are biased cool/teal-ward off the accent so they read chosen
+     rather than inherited. Semantic state colours are deliberately kept
+     separate from the accent hue: accent means "the product", state means
+     "how much to trust this answer".
+     --------------------------------------------------------------------- */
+  --rp-ground: #fafcfc;
+  --rp-surface: #ffffff;
+  --rp-raised: #f2f6f7;
+  --rp-ink: #0e1719;
+  --rp-muted: #5b6b71;
+  --rp-line: #dce5e7;
+  --rp-accent: #0e5f63;
+  --rp-accent-ink: #ffffff;
+
+  --rp-grounded: #2f6b4f;
+  --rp-grounded-bg: #eaf3ed;
+  --rp-caution: #8a5a12;
+  --rp-caution-bg: #fbf2e2;
+  --rp-critical: #97382f;
+  --rp-critical-bg: #fbeceb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+
+    --rp-ground: #0a0f11;
+    --rp-surface: #111a1d;
+    --rp-raised: #162327;
+    --rp-ink: #e8eff1;
+    --rp-muted: #90a3a9;
+    --rp-line: #223036;
+    --rp-accent: #4fb5b9;
+    --rp-accent-ink: #04211f;
+
+    --rp-grounded: #6dbe92;
+    --rp-grounded-bg: #14251c;
+    --rp-caution: #d6a244;
+    --rp-caution-bg: #2a2013;
+    --rp-critical: #de7a70;
+    --rp-critical-bg: #2c1715;
+  }
 }
 
 @theme inline {
@@ -10,17 +56,112 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-ground: var(--rp-ground);
+  --color-surface: var(--rp-surface);
+  --color-raised: var(--rp-raised);
+  --color-ink: var(--rp-ink);
+  --color-muted: var(--rp-muted);
+  --color-line: var(--rp-line);
+  --color-accent: var(--rp-accent);
+  --color-accent-ink: var(--rp-accent-ink);
+  --color-grounded: var(--rp-grounded);
+  --color-grounded-bg: var(--rp-grounded-bg);
+  --color-caution: var(--rp-caution);
+  --color-caution-bg: var(--rp-caution-bg);
+  --color-critical: var(--rp-critical);
+  --color-critical-bg: var(--rp-critical-bg);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Scoped to the chat surface so existing pages are untouched. The Geist faces
+   are already loaded by the root layout; the template's Arial rule above just
+   never used them. */
+.rp-surface {
+  background: var(--rp-ground);
+  color: var(--rp-ink);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.rp-surface :focus-visible {
+  outline: 2px solid var(--rp-accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Caret that trails the streaming answer. */
+@keyframes rp-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+
+.rp-caret {
+  display: inline-block;
+  width: 0.45em;
+  height: 1em;
+  margin-left: 0.12em;
+  translate: 0 0.13em;
+  background: var(--rp-accent);
+  animation: rp-blink 1.05s steps(2, start) infinite;
+}
+
+@keyframes rp-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.rp-dot {
+  animation: rp-pulse 1.25s ease-in-out infinite;
+}
+
+.rp-dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.rp-dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+@keyframes rp-rise {
+  from {
+    opacity: 0;
+    translate: 0 3px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.rp-rise {
+  animation: rp-rise 160ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-caret,
+  .rp-dot,
+  .rp-rise {
+    animation: none;
+  }
+  .rp-caret {
+    opacity: 1;
+  }
+  .rp-dot {
+    opacity: 0.7;
+  }
 }

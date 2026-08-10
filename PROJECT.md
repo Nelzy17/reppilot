@@ -10,11 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M9a complete → M9b next (streaming + real chat UI).
-- **Current milestone:** M9b — convert /chat to streaming; build the real chat interface.
-- **Last completed:** M9a — grounded non-streaming RAG chat. chat_sessions/chat_messages tables; POST /chat with score-threshold gate + grounding prompt; sessions listed/fetched. Verified: grounded dosing answer correct despite D-010 table damage; "bake bread" correctly refused (not grounded); prompt-injection PDF treated as data, not obeyed; conversations persisted.
+- **Phase:** M9 complete (both halves) → M10 next.
+- **Current milestone:** M10 — Meeting Prep agent (structured input → structured brief).
+- **Last completed:** M9 — grounded RAG chat, complete. M9a: non-streaming /chat (threshold gate, grounding prompt, sessions, injection-resistant). M9b: streaming /chat/stream (SSE, token-by-token) + polished /chat page (message bubbles, live streaming, first-class source citations with scores, grounded/refused states). Verified: streams live, grounded answers cited, "bake bread" refuses cleanly, injection PDF treated as data.
 - **Blockers:** none
-- **Notes:** gpt-4o-mini via Chat Completions (config-swappable). Retrieval is user-scoped but cross-document (top-k global) — a dosing query pulled an injection-doc chunk at 0.36 without harm; note for future per-document chat filter. D-010 fully settled: table damage is cosmetic, LLM parsed dosing correctly. Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove Process/Embed/Search/Ask dev controls before ship; (8) prod table extractor (D-010 residual); (9) delete Injection_Test.pdf test data before ship.
+- **Notes:** gpt-4o-mini via Chat Completions. Injection_Test.pdf test data deleted post-test. Cross-document retrieval observed — a query can cite chunks from unrelated docs (noted for future: relevance floor on displayed sources, or per-document scoping). Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove dev controls from dashboard before ship; (8) prod table extractor (D-010 residual); (9) source relevance floor / per-doc chat scoping; (10) session sidebar/history (backend ready, UI deferred).
 
 ## MILESTONES
 
@@ -30,7 +30,7 @@
 - [x] **M6** PDF parsing + chunking; `document_chunks` populated.
 - [x] **M7** Embedding generation + Qdrant upsert; document status → ready.
 - [x] **M8** Vector search endpoint (query → top-k chunks).
-- [ ] **M9** AI chat over docs (RAG + streaming), persisted sessions.
+- [x] **M9** AI chat over docs (RAG + streaming), persisted sessions.
 - [ ] **M10** Meeting Prep agent (structured input → structured brief).
 
 ### Week 3 — Simulation + Ship
