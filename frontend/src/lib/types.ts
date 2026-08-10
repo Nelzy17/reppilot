@@ -37,6 +37,26 @@ export type SearchResult =
   | { kind: "success"; query: string; hits: SearchHit[] }
   | { kind: "error"; message: string };
 
+/** A cited chunk returned by POST /chat. */
+export type ChatSource = {
+  document: string;
+  chunk_index: number;
+  score: number;
+};
+
+/** Result of the dev-only chat action. */
+export type ChatResult =
+  | { kind: "idle" }
+  | {
+      kind: "success";
+      question: string;
+      session_id: string;
+      answer: string;
+      grounded: boolean;
+      sources: ChatSource[];
+    }
+  | { kind: "error"; message: string };
+
 /** Result of the dev-only "Embed" action. */
 export type EmbedResult =
   | { kind: "idle" }

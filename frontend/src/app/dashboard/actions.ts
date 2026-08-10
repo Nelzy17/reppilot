@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 
 import { API_URL } from "@/lib/config";
 import type {
+  ChatResult,
+  ChatSource,
   EmbedResult,
   ProcessResult,
   SearchHit,
@@ -206,6 +208,74 @@ export async function searchAction(
       kind: "success",
       query,
       hits: Array.isArray(hits) ? hits : [],
+    };
+  } catch {
+    return { kind: "error", message: "Could not reach the backend" };
+  }
+}
+
+/**
+ * DEV/TESTING ONLY (M9a aid) — grounded chat over the caller's documents.
+ *
+ * Same server-side token pattern as the other dev actions: the Clerk token is
+ * attached here, never in the browser. Non-streaming; M9b replaces this.
+ *
+ * Read-only as far as the page is concerned, so no revalidatePath.
+ */
+export async function chatAction(
+  _previous: ChatResult,
+  formData: FormData,
+): Promise<ChatResult> {
+  const question = String(formData.get("query") ?? "").trim();
+  if (!question) {
+    return { kind: "error", message: "Ask a question first" };
+  }
+  // Blank means "start a new session"; the box carries the id forward after
+  // the first turn so a conversation stays in one session.
+  const sessionId = String(formData.get("sessionId") ?? "").trim();
+
+  const { userId, getToken } = await auth();
+  if (!userId) {
+    return { kind: "error", message: "Not signed in" };
+  }
+
+  const token = await getToken();
+  if (!token) {
+    return { kind: "error", message: "No Clerk session token" };
+  }
+
+  try {
+    const res = await fetch(`${API_URL}/chat`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(
+        sessionId ? { query: question, session_id: sessionId } : { query: question },
+      ),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      let detail = res.statusText;
+      try {
+        const body = await res.json();
+        if (typeof body?.detail === "string") detail = body.detail;
+      } catch {
+        /* non-JSON error body */
+      }
+      return { kind: "error", message: `${res.status} — ${detail}` };
+    }
+
+    const data = await res.json();
+    return {
+      kind: "success",
+      question,
+      session_id: String(data.session_id ?? ""),
+      answer: String(data.answer ?? ""),
+      grounded: Boolean(data.grounded),
+      sources: Array.isArray(data.sources) ? (data.sources as ChatSource[]) : [],
     };
   } catch {
     return { kind: "error", message: "Could not reach the backend" };

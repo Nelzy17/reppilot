@@ -3,6 +3,7 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import DevChat from "@/components/dev-chat";
 import DevSearch from "@/components/dev-search";
 import DocumentList from "@/components/document-list";
 import DocumentUpload from "@/components/document-upload";
@@ -65,6 +66,8 @@ export default async function DashboardPage() {
       </section>
 
       <DevSearch documents={documents.ok ? documents.data : []} />
+
+      <DevChat />
 
       <Link
         href="/"

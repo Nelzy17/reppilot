@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSIONS: int = 1536
     QDRANT_COLLECTION: str = "reppilot_chunks"
 
+    # Chat/generation model (M9). Swappable via .env without a code change.
+    CHAT_MODEL: str = "gpt-4o-mini"
+
     @property
     def async_database_url(self) -> str:
         return to_asyncpg_url(self.DATABASE_URL)
