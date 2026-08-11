@@ -3,7 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 
 import { previewPersonaAction, startSessionAction } from "@/app/roleplay/actions";
-import DevConversation from "@/components/roleplay/dev-conversation";
+import Conversation from "@/components/roleplay/conversation";
 import type {
   PersonaCatalogue,
   PersonaPreview,
@@ -73,7 +73,26 @@ export default function RoleplayView({
   const [previewError, setPreviewError] = useState("");
   const [previewPending, startPreview] = useTransition();
 
+  // Which session the rep has stepped away from, so leaving a conversation
+  // returns to setup without losing the action result. Derived, not synced —
+  // a new session has a new id and takes over the page again.
+  const [leftSession, setLeftSession] = useState<string | null>(null);
+  const activeSession =
+    state.kind === "success" && state.session.id !== leftSession
+      ? state.session
+      : null;
+
   const ready = Boolean(specialty && personality && product.trim());
+
+  if (activeSession) {
+    return (
+      <Conversation
+        session={activeSession}
+        catalogue={catalogue}
+        onRestart={() => setLeftSession(activeSession.id)}
+      />
+    );
+  }
 
   function showPrompt() {
     if (!specialty || !personality) {
@@ -227,40 +246,6 @@ export default function RoleplayView({
                 Couldn&rsquo;t start the session
               </h3>
               <p className="text-[14px] leading-relaxed text-ink">{state.message}</p>
-            </div>
-          )}
-
-          {state.kind === "success" && (
-            <div className="rp-rise rounded-xl border border-grounded/40 bg-surface">
-              <div className="border-b border-line px-5 py-4">
-                <span className="inline-flex items-center rounded-full bg-grounded-bg px-2.5 py-1 font-mono text-[10px] font-medium uppercase tracking-[0.1em] text-grounded">
-                  Session ready
-                </span>
-                <h3 className="mt-2.5 text-[19px] font-semibold leading-snug tracking-[-0.01em] text-ink">
-                  {state.session.persona_description}
-                </h3>
-                <p className="mt-1 text-[13.5px] text-muted">
-                  Practising {state.session.product}
-                </p>
-              </div>
-              <dl className="grid gap-x-6 gap-y-2 px-5 py-4 sm:grid-cols-[auto_1fr]">
-                {[
-                  ["Session", state.session.id],
-                  ["Status", state.session.status],
-                  ["Specialty", state.session.persona_specialty],
-                  ["Personality", state.session.persona_personality],
-                ].map(([label, value]) => (
-                  <div key={label} className="contents">
-                    <dt className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
-                      {label}
-                    </dt>
-                    <dd className="truncate font-mono text-[12px] text-ink">
-                      {value}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-              <DevConversation session={state.session} />
             </div>
           )}
 

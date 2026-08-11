@@ -10,11 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M12a complete → M12b next (polished conversation UI).
-- **Current milestone:** M12b — polished roleplay conversation interface.
-- **Last completed:** M12a — multi-turn roleplay loop. Physician opens in-character; rep/physician turns via replayed history (persona system prompt on every turn); streamed physician replies (SSE, reused M9b); transcript persisted in order; end-session → status=completed. Role mapping inverted (physician=assistant, rep=user). Stress-tested and PASSED: refused fabricated 40% mortality stat, didn't invent Cardovex safety findings, deflected character-break ("ignore the roleplay") in-role after hardening, redirected off-topic. Transcript + completed lifecycle verified.
+- **Phase:** M12 complete (both halves) → M13 next.
+- **Current milestone:** M13 — Coaching engine (transcript → rubric scoring → report).
+- **Last completed:** M12b — polished roleplay conversation UI. Persona header always visible (specialty/temperament), distinct physician/rep bubbles consistent with /chat, streamed replies, product-cold hint in input. End session → SESSION COMPLETE state with coaching placeholder (reserved slot for M13). Persona held character across further adversarial phrasings (slang, direct role-probe).
 - **Blockers:** none
-- **Notes:** Persona role-lock hardened against instruction-override/character-break (stays first-person physician, never summarizes/admits AI). D-015 constraints hold across full conversation. Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove all dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
+- **Notes:** Coaching placeholder built in M12b as the M13 seam — session-complete state ready to receive the coaching report. Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove all dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
 
 ## MILESTONES
 
@@ -35,7 +35,7 @@
 
 ### Week 3 — Simulation + Ship
 - [x] **M11** Roleplay session create + persona system prompts.
-- [ ] **M12** Multi-turn roleplay loop with transcript persistence.
+- [x] **M12** Multi-turn roleplay loop with transcript persistence.
 - [ ] **M13** Coaching engine (transcript → rubric scoring → report).
 - [ ] **M14** Progress tracking / analytics view.
 - [ ] **M15** Production deploy (Vercel + Render), env hardening, polish.
