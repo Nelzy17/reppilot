@@ -40,6 +40,12 @@ export default async function DashboardPage() {
         >
           Meeting prep →
         </Link>
+        <Link
+          href="/roleplay"
+          className="rounded-full border border-black/[.12] px-5 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.2] dark:hover:bg-white/[.06]"
+        >
+          Practice →
+        </Link>
       </div>
 
       <section className="w-full max-w-xl">

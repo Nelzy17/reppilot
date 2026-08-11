@@ -247,6 +247,12 @@ export default function ChatView() {
               Meeting prep
             </a>
             <a
+              href="/roleplay"
+              className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:text-ink"
+            >
+              Practice
+            </a>
+            <a
               href="/dashboard"
               className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:text-ink"
             >

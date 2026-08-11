@@ -9,6 +9,7 @@ from app.models.chat import ChatMessage, ChatSession
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.models.meeting_prep import MeetingPrep
+from app.models.roleplay import RoleplaySession
 from app.models.user import User
 
 __all__ = [
@@ -17,5 +18,6 @@ __all__ = [
     "Document",
     "DocumentChunk",
     "MeetingPrep",
+    "RoleplaySession",
     "User",
 ]

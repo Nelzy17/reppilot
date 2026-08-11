@@ -10,11 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M10 complete → M11 next.
-- **Current milestone:** M11 — Roleplay session create + persona system prompts.
-- **Last completed:** M10 — Meeting Prep agent. Structured form input → grounded structured brief (Structured Outputs / Pydantic schema, single gpt-4o-mini call) with talking points, product highlights, objections+responses, follow-ups, and a forced grounding_note declaring document gaps. Persisted to meeting_preps. /prep page. Verified: all claims grounded (no invented efficacy/dosing/pricing), grounding_note honestly lists gaps, no-coverage product ("Zorblax") correctly refused.
+- **Phase:** M11 complete → M12 next.
+- **Current milestone:** M12 — Multi-turn roleplay loop with transcript persistence.
+- **Last completed:** M11 — Roleplay session setup + persona system prompts. roleplay_sessions table; parameterized persona template (5 specialties × 5 personalities = 25 from ~10 components); POST /roleplay/sessions + list/fetch; /roleplay setup UI with "view persona prompt". Persona is product-COLD (rep must explain the product) but clinically responsible (raises objections as questions, forbidden from asserting fabricated clinical facts as truth). Reviewed the skeptical-cardiologist prompt — realistic, safe, in-character.
 - **Blockers:** none
-- **Notes:** Structured Outputs (json_schema via Pydantic) guarantees brief sections. grounding_note field is the safety mechanism — forces explicit gap-declaration vs silent fabrication. Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
+- **Notes:** Roleplay grounding is INVERTED vs chat/prep (D-015): the AI physician is intentionally ungrounded on the product — that's the training value — but constrained against fabricating clinical facts the rep might absorb. Personas: cardiologist/oncologist/endocrinologist/neurologist/family-physician × skeptical/busy/curious/resistant/supportive. Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
 
 ## MILESTONES
 
@@ -34,7 +34,7 @@
 - [x] **M10** Meeting Prep agent (structured input → structured brief).
 
 ### Week 3 — Simulation + Ship
-- [ ] **M11** Roleplay session create + persona system prompts.
+- [x] **M11** Roleplay session create + persona system prompts.
 - [ ] **M12** Multi-turn roleplay loop with transcript persistence.
 - [ ] **M13** Coaching engine (transcript → rubric scoring → report).
 - [ ] **M14** Progress tracking / analytics view.

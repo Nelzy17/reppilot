@@ -81,6 +81,12 @@ export default function PrepView() {
               Assistant
             </a>
             <a
+              href="/roleplay"
+              className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:text-ink"
+            >
+              Practice
+            </a>
+            <a
               href="/dashboard"
               className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:text-ink"
             >

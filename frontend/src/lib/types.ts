@@ -71,6 +71,40 @@ export type PrepResult =
   | { kind: "no_coverage"; message: string }
   | { kind: "error"; message: string };
 
+/** A persona building block, from GET /roleplay/personas. */
+export type PersonaOption = {
+  key: string;
+  label: string;
+  summary: string;
+};
+
+export type PersonaCatalogue = {
+  specialties: PersonaOption[];
+  personalities: PersonaOption[];
+};
+
+export type RoleplaySession = {
+  id: string;
+  persona_specialty: string;
+  persona_personality: string;
+  persona_description: string;
+  product: string;
+  status: string;
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type StartSessionResult =
+  | { kind: "idle" }
+  | { kind: "success"; session: RoleplaySession }
+  | { kind: "error"; message: string };
+
+export type PersonaPreview = {
+  description: string;
+  product: string;
+  system_prompt: string;
+};
+
 /** Result of the dev-only chat action. */
 export type ChatResult =
   | { kind: "idle" }
