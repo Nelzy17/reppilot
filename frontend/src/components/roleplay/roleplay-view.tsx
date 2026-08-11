@@ -3,6 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 
 import { previewPersonaAction, startSessionAction } from "@/app/roleplay/actions";
+import DevConversation from "@/components/roleplay/dev-conversation";
 import type {
   PersonaCatalogue,
   PersonaPreview,
@@ -259,10 +260,7 @@ export default function RoleplayView({
                   </div>
                 ))}
               </dl>
-              <p className="border-t border-line px-5 py-3.5 text-[13px] leading-relaxed text-muted">
-                The conversation itself arrives in the next milestone. For now the
-                session is saved and waiting.
-              </p>
+              <DevConversation session={state.session} />
             </div>
           )}
 

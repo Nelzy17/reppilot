@@ -7,6 +7,7 @@ import type {
   PersonaCatalogue,
   PersonaPreview,
   RoleplaySession,
+  RoleplayTurn,
   StartSessionResult,
 } from "@/lib/types";
 
@@ -102,6 +103,49 @@ export async function previewPersonaAction(
     const res = await backend(`/roleplay/persona-preview?${params}`);
     if (!res.ok) return { ok: false, message: await detailOf(res) };
     return { ok: true, preview: (await res.json()) as PersonaPreview };
+  } catch {
+    return { ok: false, message: "Couldn't reach RepPilot." };
+  }
+}
+
+/**
+ * DEV/TESTING ONLY (M12 aid) — the physician's opening turn.
+ *
+ * Non-streaming, so a Server Action fits and the token stays server-side.
+ * Idempotent on the backend: re-opening returns the existing greeting.
+ */
+export async function openConversationAction(
+  sessionId: string,
+): Promise<{ ok: true; turn: RoleplayTurn } | { ok: false; message: string }> {
+  try {
+    const res = await backend(
+      `/roleplay/sessions/${encodeURIComponent(sessionId)}/opening`,
+      { method: "POST" },
+    );
+    if (!res.ok) return { ok: false, message: await detailOf(res) };
+    const body = await res.json();
+    return { ok: true, turn: body.turn as RoleplayTurn };
+  } catch {
+    return { ok: false, message: "Couldn't reach RepPilot." };
+  }
+}
+
+/** DEV/TESTING ONLY (M12 aid) — close the session. */
+export async function endConversationAction(
+  sessionId: string,
+): Promise<{ ok: true; status: string; turnCount: number } | { ok: false; message: string }> {
+  try {
+    const res = await backend(
+      `/roleplay/sessions/${encodeURIComponent(sessionId)}/end`,
+      { method: "POST" },
+    );
+    if (!res.ok) return { ok: false, message: await detailOf(res) };
+    const body = await res.json();
+    return {
+      ok: true,
+      status: String(body.status ?? "completed"),
+      turnCount: Number(body.turn_count ?? 0),
+    };
   } catch {
     return { ok: false, message: "Couldn't reach RepPilot." };
   }

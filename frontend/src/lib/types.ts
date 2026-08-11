@@ -105,6 +105,13 @@ export type PersonaPreview = {
   system_prompt: string;
 };
 
+/** One entry in a roleplay transcript. */
+export type RoleplayTurn = {
+  role: "physician" | "rep";
+  content: string;
+  ts: string;
+};
+
 /** Result of the dev-only chat action. */
 export type ChatResult =
   | { kind: "idle" }

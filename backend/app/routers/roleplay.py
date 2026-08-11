@@ -4,23 +4,35 @@ Creates a practice session and exposes the persona catalogue. The conversation
 loop is M12 and scoring is M13 — nothing here calls the model.
 """
 
+import json
 import logging
 import uuid
+from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.clerk import get_current_user_id
-from app.db.session import get_db
+from app.db.session import AsyncSessionLocal, get_db
 from app.models import RoleplaySession, User
 from app.services.personas import (
     PERSONALITIES,
     SPECIALTIES,
     build_persona_system_prompt,
     describe_persona,
+)
+from app.services.roleplay_chat import (
+    PHYSICIAN,
+    REP,
+    RoleplayError,
+    generate_opening,
+    make_turn,
+    stream_reply,
 )
 
 logger = logging.getLogger(__name__)
@@ -210,4 +222,263 @@ async def get_session(
 
     payload = _serialise(session)
     payload["transcript"] = session.transcript or []
+    return payload
+
+
+# --------------------------------------------------------------------------
+# Conversation loop (M12)
+# --------------------------------------------------------------------------
+
+
+class MessageRequest(BaseModel):
+    message: str = Field(..., description="What the representative says")
+
+
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "X-Accel-Buffering": "no",
+}
+
+
+def _sse(event: str, data: dict[str, Any]) -> bytes:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+
+
+async def _locked_session(
+    db: AsyncSession, session_id: uuid.UUID, user_id: uuid.UUID
+) -> RoleplaySession:
+    """Fetch the session for update. FOR UPDATE serialises concurrent turns so
+    two in-flight messages cannot each read-then-overwrite the transcript."""
+    session = (
+        await db.execute(
+            select(RoleplaySession)
+            .where(
+                RoleplaySession.id == session_id,
+                RoleplaySession.user_id == user_id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+    return session
+
+
+def _require_active(session: RoleplaySession) -> None:
+    if session.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This session is {session.status}; start a new one to keep practising",
+        )
+
+
+async def _append_turn(
+    session_id: uuid.UUID, user_id: uuid.UUID, turn: dict[str, Any]
+) -> int:
+    """Append one turn in its own short-lived session, returning its index.
+
+    Not the request-scoped session: during streaming that one would hold a
+    pooled connection open for the whole model response. Re-reads under FOR
+    UPDATE so the append is against current state, and assigns a NEW list —
+    mutating the existing one in place would not mark the JSONB column dirty.
+    """
+    async with AsyncSessionLocal() as db:
+        session = (
+            await db.execute(
+                select(RoleplaySession)
+                .where(
+                    RoleplaySession.id == session_id,
+                    RoleplaySession.user_id == user_id,
+                )
+                .with_for_update()
+            )
+        ).scalar_one_or_none()
+        if session is None:
+            raise RoleplayError("Session disappeared while saving the turn")
+
+        transcript = list(session.transcript or [])
+        transcript.append(turn)
+        session.transcript = transcript
+        await db.commit()
+        return len(transcript) - 1
+
+
+@router.post("/sessions/{session_id}/opening")
+async def create_opening(
+    session_id: uuid.UUID,
+    clerk_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """The physician speaks first, before the rep has said anything.
+
+    Idempotent: if an opening already exists it is returned unchanged rather
+    than generating a second one.
+    """
+    user = await _require_user(db, clerk_user_id)
+    user_id = user.id
+    session = await _locked_session(db, session_id, user_id)
+    _require_active(session)
+
+    existing = list(session.transcript or [])
+    if existing:
+        await db.rollback()
+        return {
+            "session_id": str(session_id),
+            "turn": existing[0],
+            "turn_index": 0,
+            "created": False,
+        }
+
+    specialty = session.persona_specialty
+    personality = session.persona_personality
+    product = session.product
+    await db.rollback()  # release the row before the model call
+
+    try:
+        opening = await generate_opening(specialty, personality, product)
+    except RoleplayError as exc:
+        logger.warning("Opening generation failed for %s: %s", session_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not start the conversation: {exc}",
+        ) from exc
+
+    turn = make_turn(PHYSICIAN, opening)
+    try:
+        index = await _append_turn(session_id, user_id, turn)
+    except Exception as exc:
+        logger.exception("Failed to persist opening for %s", session_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Opening generated but could not be saved",
+        ) from exc
+
+    return {
+        "session_id": str(session_id),
+        "turn": turn,
+        "turn_index": index,
+        "created": True,
+    }
+
+
+@router.post("/sessions/{session_id}/message")
+async def send_message(
+    session_id: uuid.UUID,
+    payload: MessageRequest,
+    clerk_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Send the rep's message and stream the physician's reply.
+
+    Events: ``token`` {"text"}, ``turn`` {the persisted physician turn},
+    ``error`` {"message"}, ``done`` {}.
+
+    The rep's message is persisted before streaming begins, so a mid-stream
+    failure leaves their words in the transcript but no half-finished physician
+    turn beside them.
+    """
+    message = (payload.message or "").strip()
+    if not message:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Message must not be empty"
+        )
+
+    user = await _require_user(db, clerk_user_id)
+    user_id = user.id
+    session = await _locked_session(db, session_id, user_id)
+    _require_active(session)
+
+    specialty = session.persona_specialty
+    personality = session.persona_personality
+    product = session.product
+    # Snapshot the history the reply will be generated against, before the new
+    # rep message is appended.
+    history = list(session.transcript or [])
+    await db.rollback()  # release the connection for the duration of the stream
+
+    rep_turn = make_turn(REP, message)
+    try:
+        await _append_turn(session_id, user_id, rep_turn)
+    except Exception as exc:
+        logger.exception("Failed to persist rep message for %s", session_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not save your message",
+        ) from exc
+
+    async def reply_stream() -> AsyncIterator[bytes]:
+        parts: list[str] = []
+        try:
+            async for delta in stream_reply(
+                specialty, personality, product, history, message
+            ):
+                parts.append(delta)
+                yield _sse("token", {"text": delta})
+        except RoleplayError as exc:
+            logger.warning("Roleplay stream failed for %s: %s", session_id, exc)
+            yield _sse("error", {"message": str(exc)})
+            yield _sse("done", {})
+            return
+        except Exception:  # noqa: BLE001 - must not escape as a raw crash
+            logger.exception("Unexpected roleplay stream failure for %s", session_id)
+            yield _sse("error", {"message": "Unexpected error during the reply"})
+            yield _sse("done", {})
+            return
+
+        reply = "".join(parts).strip()
+        if not reply:
+            yield _sse("error", {"message": "The physician gave an empty reply"})
+            yield _sse("done", {})
+            return
+
+        physician_turn = make_turn(PHYSICIAN, reply)
+        try:
+            index = await _append_turn(session_id, user_id, physician_turn)
+        except Exception:
+            logger.exception("Failed to persist physician turn for %s", session_id)
+            yield _sse(
+                "error", {"message": "Reply complete but could not be saved"}
+            )
+            yield _sse("done", {})
+            return
+
+        yield _sse("turn", {**physician_turn, "turn_index": index})
+        yield _sse("done", {})
+
+    return StreamingResponse(
+        reply_stream(), media_type="text/event-stream", headers=SSE_HEADERS
+    )
+
+
+@router.post("/sessions/{session_id}/end")
+async def end_session(
+    session_id: uuid.UUID,
+    clerk_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Close the session. The completed transcript is M13's coaching input."""
+    user = await _require_user(db, clerk_user_id)
+    session = await _locked_session(db, session_id, user.id)
+
+    if session.status == "completed":
+        # Already closed — report the existing state rather than erroring.
+        payload = _serialise(session)
+        payload["turn_count"] = len(session.transcript or [])
+        await db.rollback()
+        return payload
+
+    session.status = "completed"
+    session.completed_at = datetime.now(tz=timezone.utc)
+    await db.commit()
+    await db.refresh(session)
+
+    logger.info(
+        "Ended roleplay session %s after %d turn(s)",
+        session_id,
+        len(session.transcript or []),
+    )
+    payload = _serialise(session)
+    payload["turn_count"] = len(session.transcript or [])
     return payload

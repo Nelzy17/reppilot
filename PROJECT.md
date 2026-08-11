@@ -10,11 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M11 complete → M12 next.
-- **Current milestone:** M12 — Multi-turn roleplay loop with transcript persistence.
-- **Last completed:** M11 — Roleplay session setup + persona system prompts. roleplay_sessions table; parameterized persona template (5 specialties × 5 personalities = 25 from ~10 components); POST /roleplay/sessions + list/fetch; /roleplay setup UI with "view persona prompt". Persona is product-COLD (rep must explain the product) but clinically responsible (raises objections as questions, forbidden from asserting fabricated clinical facts as truth). Reviewed the skeptical-cardiologist prompt — realistic, safe, in-character.
+- **Phase:** M12a complete → M12b next (polished conversation UI).
+- **Current milestone:** M12b — polished roleplay conversation interface.
+- **Last completed:** M12a — multi-turn roleplay loop. Physician opens in-character; rep/physician turns via replayed history (persona system prompt on every turn); streamed physician replies (SSE, reused M9b); transcript persisted in order; end-session → status=completed. Role mapping inverted (physician=assistant, rep=user). Stress-tested and PASSED: refused fabricated 40% mortality stat, didn't invent Cardovex safety findings, deflected character-break ("ignore the roleplay") in-role after hardening, redirected off-topic. Transcript + completed lifecycle verified.
 - **Blockers:** none
-- **Notes:** Roleplay grounding is INVERTED vs chat/prep (D-015): the AI physician is intentionally ungrounded on the product — that's the training value — but constrained against fabricating clinical facts the rep might absorb. Personas: cardiologist/oncologist/endocrinologist/neurologist/family-physician × skeptical/busy/curious/resistant/supportive. Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
+- **Notes:** Persona role-lock hardened against instruction-override/character-break (stays first-person physician, never summarizes/admits AI). D-015 constraints hold across full conversation. Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove all dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
 
 ## MILESTONES
 
