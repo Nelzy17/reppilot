@@ -46,6 +46,12 @@ export default async function DashboardPage() {
         >
           Practice →
         </Link>
+        <Link
+          href="/progress"
+          className="rounded-full border border-black/[.12] px-5 py-2 text-sm font-medium transition-colors hover:bg-black/[.04] dark:border-white/[.2] dark:hover:bg-white/[.06]"
+        >
+          Progress →
+        </Link>
       </div>
 
       <section className="w-full max-w-xl">

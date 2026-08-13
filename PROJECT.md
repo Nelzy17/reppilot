@@ -10,11 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M13 complete → M14 next.
-- **Current milestone:** M14 — Progress tracking / analytics view.
-- **Last completed:** M13 — coaching engine. Completed transcript → structured coaching report (Structured Outputs / Pydantic): overall + product_knowledge/communication/objection_handling/clinical_accuracy (0–100) + per-dimension narrative + recommendations. Persisted to coaching_reports. Clinical accuracy is DOC-GROUNDED (retrieves product chunks as truth reference) — verified: caught the fabricated 40% mortality claim as unsupported, dinged the score, didn't invent a "correct" figure. Feedback specific/transcript-referenced, honest (45/100, not inflated). Fills M12b coaching placeholder; sources shown for transparency.
+- **Phase:** M14 complete → M15 next (DEPLOY + polish + cleanup) — final milestone.
+- **Current milestone:** M15 — production deploy (Vercel + Render), env hardening, remove dev controls, demo prep.
+- **Last completed:** M14 — progress/analytics. GET /progress aggregates the user's coaching_reports; /progress page with overall trend chart, per-dimension trend chart (recharts), summary stat cards, session table + history. Real aggregation verified (avg 56 = mean of 45/55/60/65). No new AI. Nav renamed for users (Assistant/Meeting prep/Practice/Documents).
 - **Blockers:** none
-- **Notes:** Coaching only on completed sessions. Doc-grounded clinical accuracy is the key safety design (D-017). Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove ALL dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
+- **Notes:** Full product loop complete: upload→chunk→embed→retrieve→chat/prep/roleplay→coach→track. Open follow-ups now largely M15 work: (1) 127.0.0.1→env var [DO IN M15]; (2) npm audit [M15]; (3) jwt_key [optional]; (4) stray .git; (5) webhook 500→400 [minor]; (6) Blob x-api-version 12; (7) REMOVE all dev controls (Process/Embed/Search/Ask + roleplay dev bits) [M15]; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
 
 ## MILESTONES
 
@@ -37,8 +37,8 @@
 - [x] **M11** Roleplay session create + persona system prompts.
 - [x] **M12** Multi-turn roleplay loop with transcript persistence.
 - [x] **M13** Coaching engine (transcript → rubric scoring → report).
-- [ ] **M14** Progress tracking / analytics view.
-- [ ] **M15** Production deploy (Vercel + Render), env hardening, polish.
+- [x] **M14** Progress tracking / analytics view.
+- [x] **M15** Production deploy (Vercel + Render), env hardening, polish.
       Also: create Demo chat + demo script; promote AI Safety checklist to a skill.
 
 ## ACCEPTANCE CRITERIA (current milestone only)

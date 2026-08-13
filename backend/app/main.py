@@ -6,6 +6,7 @@ from app.routers import (
     documents,
     me,
     meeting_prep,
+    progress,
     roleplay,
     search,
     webhooks,
@@ -31,6 +32,7 @@ app.include_router(search.router)
 app.include_router(chat.router)
 app.include_router(meeting_prep.router)
 app.include_router(roleplay.router)
+app.include_router(progress.router)
 
 
 @app.get("/health")

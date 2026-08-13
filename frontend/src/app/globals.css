@@ -26,6 +26,26 @@
   --rp-caution-bg: #fbf2e2;
   --rp-critical: #97382f;
   --rp-critical-bg: #fbeceb;
+
+  /* ---------------------------------------------------------------------
+     Chart roles. Categorical slots identify the four coaching dimensions —
+     deliberately NOT the semantic colours above, which are reserved for
+     state and must never impersonate a series.
+
+     These are the reference categorical palette's first four slots,
+     validated against this app's own surfaces rather than the default ones:
+     light on #ffffff — worst adjacent CVD ΔE 9.1, normal-vision ΔE 22.9;
+     dark on #111a1d — CVD ΔE 8.4, normal-vision ΔE 19.8, all >= 3:1.
+     Two light slots sit under 3:1, so the page ships a table view as the
+     required relief. Order is the CVD-safety mechanism — do not reorder
+     without re-running the validator.
+     --------------------------------------------------------------------- */
+  --rp-series-1: #2a78d6;
+  --rp-series-2: #eb6834;
+  --rp-series-3: #1baf7a;
+  --rp-series-4: #eda100;
+  --rp-grid: #e6ecee;
+  --rp-axis: #9fb0b6;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -48,6 +68,15 @@
     --rp-caution-bg: #2a2013;
     --rp-critical: #de7a70;
     --rp-critical-bg: #2c1715;
+
+    /* Same four hues stepped for the dark surface — a selected dark palette,
+       not an automatic flip. */
+    --rp-series-1: #3987e5;
+    --rp-series-2: #d95926;
+    --rp-series-3: #199e70;
+    --rp-series-4: #c98500;
+    --rp-grid: #1e2a30;
+    --rp-axis: #5d7078;
   }
 }
 
@@ -71,6 +100,11 @@
   --color-caution-bg: var(--rp-caution-bg);
   --color-critical: var(--rp-critical);
   --color-critical-bg: var(--rp-critical-bg);
+
+  --color-series-1: var(--rp-series-1);
+  --color-series-2: var(--rp-series-2);
+  --color-series-3: var(--rp-series-3);
+  --color-series-4: var(--rp-series-4);
 }
 
 body {
@@ -137,6 +171,24 @@ body {
   animation-delay: 0.36s;
 }
 
+/* Placeholder block for a pending server fetch. Breathes between 0.5 and 0.9
+   so it reads as "not yet" rather than as a real, empty surface. */
+.rp-skeleton {
+  background: var(--rp-line);
+  border-radius: 6px;
+  animation: rp-skeleton 1.4s ease-in-out infinite;
+}
+
+@keyframes rp-skeleton {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
 @keyframes rp-rise {
   from {
     opacity: 0;
@@ -155,7 +207,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .rp-caret,
   .rp-dot,
-  .rp-rise {
+  .rp-rise,
+  .rp-skeleton {
     animation: none;
   }
   .rp-caret {

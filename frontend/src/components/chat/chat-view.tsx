@@ -253,6 +253,12 @@ export default function ChatView() {
               Practice
             </a>
             <a
+              href="/progress"
+              className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:text-ink"
+            >
+              Progress
+            </a>
+            <a
               href="/dashboard"
               className="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:text-ink"
             >

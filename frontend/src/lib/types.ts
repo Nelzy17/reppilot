@@ -105,6 +105,42 @@ export type PersonaPreview = {
   system_prompt: string;
 };
 
+/** One coached session in the progress view. */
+export type ProgressSession = {
+  session_id: string;
+  persona_specialty: string;
+  persona_personality: string;
+  persona_description: string;
+  product: string;
+  created_at: string;
+  coached_at: string;
+  overall_score: number;
+  product_knowledge: number;
+  communication: number;
+  objection_handling: number;
+  clinical_accuracy: number;
+};
+
+export type Progress = {
+  summary: {
+    sessions_coached: number;
+    average_overall: number | null;
+    averages: {
+      product_knowledge: number | null;
+      communication: number | null;
+      objection_handling: number | null;
+      clinical_accuracy: number | null;
+    };
+    first_session_at: string | null;
+    latest_session_at: string | null;
+  };
+  sessions: ProgressSession[];
+};
+
+export type ProgressResult =
+  | { ok: true; data: Progress }
+  | { ok: false; message: string };
+
 /** A coaching report for a completed roleplay session. */
 export type CoachingReport = {
   id: string;
