@@ -19,7 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.clerk import get_current_user_id
 from app.db.session import AsyncSessionLocal, get_db
-from app.models import RoleplaySession, User
+from app.models import CoachingReport, RoleplaySession, User
+from app.services.coaching import (
+    CoachingError,
+    NotCoachableError,
+    generate_report,
+)
 from app.services.personas import (
     PERSONALITIES,
     SPECIALTIES,
@@ -482,3 +487,174 @@ async def end_session(
     payload = _serialise(session)
     payload["turn_count"] = len(session.transcript or [])
     return payload
+
+
+# --------------------------------------------------------------------------
+# Coaching (M13)
+# --------------------------------------------------------------------------
+
+DIMENSIONS = (
+    "product_knowledge",
+    "communication",
+    "objection_handling",
+    "clinical_accuracy",
+)
+
+
+def _serialise_report(report: CoachingReport) -> dict[str, Any]:
+    return {
+        "id": str(report.id),
+        "roleplay_session_id": str(report.roleplay_session_id),
+        "overall_score": report.overall_score,
+        "scores": {d: getattr(report, d) for d in DIMENSIONS},
+        "narratives": report.narratives or {},
+        "recommendations": report.recommendations or [],
+        "sources": report.sources or [],
+        "created_at": report.created_at.isoformat(),
+    }
+
+
+async def _existing_report(
+    db: AsyncSession, session_id: uuid.UUID
+) -> CoachingReport | None:
+    return (
+        await db.execute(
+            select(CoachingReport).where(
+                CoachingReport.roleplay_session_id == session_id
+            )
+        )
+    ).scalar_one_or_none()
+
+
+@router.post("/sessions/{session_id}/coaching")
+async def create_coaching(
+    session_id: uuid.UUID,
+    regenerate: bool = Query(
+        False, description="Discard any existing report and score again"
+    ),
+    clerk_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    """Score a completed conversation.
+
+    Returns the existing report unless ``regenerate=true`` — a second click
+    should not silently spend another model call.
+    """
+    user = await _require_user(db, clerk_user_id)
+    user_id = user.id
+
+    session = (
+        await db.execute(
+            select(RoleplaySession).where(
+                RoleplaySession.id == session_id,
+                RoleplaySession.user_id == user_id,
+            )
+        )
+    ).scalar_one_or_none()
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+
+    if session.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="End the session before asking for coaching",
+        )
+
+    existing = await _existing_report(db, session_id)
+    if existing is not None and not regenerate:
+        return _serialise_report(existing)
+
+    product = session.product
+    persona = describe_persona(
+        session.persona_specialty, session.persona_personality
+    )
+    transcript = list(session.transcript or [])
+    await db.rollback()  # release the connection across the model call
+
+    try:
+        result = await generate_report(
+            db,
+            user_id=user_id,
+            product=product,
+            persona_description=persona,
+            transcript=transcript,
+        )
+    except NotCoachableError as exc:
+        await db.rollback()
+        logger.info("Refused coaching for %s: %s", session_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+    except CoachingError as exc:
+        await db.rollback()
+        logger.warning("Coaching failed for %s: %s", session_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Could not produce the report: {exc}",
+        ) from exc
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("Unexpected coaching failure for %s", session_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unexpected error while reviewing the conversation",
+        ) from exc
+
+    try:
+        report = await _existing_report(db, session_id)
+        if report is None:
+            report = CoachingReport(roleplay_session_id=session_id)
+            db.add(report)
+
+        report.overall_score = result.report["overall_score"]
+        for dimension in DIMENSIONS:
+            setattr(report, dimension, result.report[dimension])
+        report.recommendations = result.report["recommendations"]
+        report.narratives = result.report["narratives"]
+        report.sources = result.sources
+
+        await db.commit()
+        await db.refresh(report)
+    except Exception as exc:
+        await db.rollback()
+        logger.exception("Failed to persist coaching report for %s", session_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Report generated but could not be saved",
+        ) from exc
+
+    return _serialise_report(report)
+
+
+@router.get("/sessions/{session_id}/coaching")
+async def get_coaching(
+    session_id: uuid.UUID,
+    clerk_user_id: str = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    user = await _require_user(db, clerk_user_id)
+
+    # Ownership goes through the session, so another user's report is missing.
+    session = (
+        await db.execute(
+            select(RoleplaySession).where(
+                RoleplaySession.id == session_id,
+                RoleplaySession.user_id == user.id,
+            )
+        )
+    ).scalar_one_or_none()
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+        )
+
+    report = await _existing_report(db, session_id)
+    if report is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No coaching report for this session yet",
+        )
+
+    return _serialise_report(report)

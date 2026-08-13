@@ -105,6 +105,23 @@ export type PersonaPreview = {
   system_prompt: string;
 };
 
+/** A coaching report for a completed roleplay session. */
+export type CoachingReport = {
+  id: string;
+  roleplay_session_id: string;
+  overall_score: number;
+  scores: {
+    product_knowledge: number;
+    communication: number;
+    objection_handling: number;
+    clinical_accuracy: number;
+  };
+  narratives: Record<string, string>;
+  recommendations: string[];
+  sources: ChatSource[];
+  created_at: string;
+};
+
 /** One entry in a roleplay transcript. */
 export type RoleplayTurn = {
   role: "physician" | "rep";

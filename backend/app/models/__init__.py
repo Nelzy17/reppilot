@@ -6,6 +6,7 @@ empty schema and emits a migration that drops tables.
 """
 
 from app.models.chat import ChatMessage, ChatSession
+from app.models.coaching import CoachingReport
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.models.meeting_prep import MeetingPrep
@@ -15,6 +16,7 @@ from app.models.user import User
 __all__ = [
     "ChatMessage",
     "ChatSession",
+    "CoachingReport",
     "Document",
     "DocumentChunk",
     "MeetingPrep",

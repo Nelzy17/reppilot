@@ -5,8 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   endConversationAction,
   openConversationAction,
+  requestCoachingAction,
 } from "@/app/roleplay/actions";
+import CoachingReportView from "@/components/roleplay/coaching-report";
 import type {
+  CoachingReport,
   PersonaCatalogue,
   RoleplaySession,
   RoleplayTurn,
@@ -44,6 +47,11 @@ export default function Conversation({
   const [streaming, setStreaming] = useState("");
   const [draft, setDraft] = useState("");
   const [error, setError] = useState("");
+
+  const [report, setReport] = useState<CoachingReport | null>(null);
+  const [coaching, setCoaching] = useState(false);
+  const [coachingError, setCoachingError] = useState("");
+  const [coachingRefused, setCoachingRefused] = useState("");
 
   const transcriptRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -166,6 +174,21 @@ export default function Conversation({
     } else {
       setError(result.message);
     }
+  }
+
+  async function getCoaching() {
+    setCoaching(true);
+    setCoachingError("");
+    setCoachingRefused("");
+    const result = await requestCoachingAction(session.id);
+    if (result.ok) {
+      setReport(result.report);
+    } else if (result.kind === "too_short") {
+      setCoachingRefused(result.message);
+    } else {
+      setCoachingError(result.message);
+    }
+    setCoaching(false);
   }
 
   const complete = phase === "complete";
@@ -301,28 +324,53 @@ export default function Conversation({
                 </p>
               </div>
 
-              <div className="px-5 py-5">
+              <div className="px-5 py-5" aria-live="polite">
                 <h3 className="mb-2 font-mono text-[10px] font-medium uppercase tracking-[0.14em] text-muted">
                   Coaching feedback
                 </h3>
-                <p className="text-[13.5px] leading-relaxed text-muted">
-                  Your coaching feedback will appear here — how you handled the
-                  objections, where the conversation turned, and what to try
-                  differently next time.
-                </p>
-                <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <button
-                    type="button"
-                    disabled
-                    aria-describedby="coaching-note"
-                    className="cursor-not-allowed rounded-lg border border-line px-4 py-2 text-[13.5px] font-medium text-muted opacity-60"
-                  >
-                    Get coaching
-                  </button>
-                  <span id="coaching-note" className="text-[12.5px] text-muted">
-                    Arriving in the next milestone.
-                  </span>
-                </div>
+
+                {report ? (
+                  <div className="rp-rise mt-3">
+                    <CoachingReportView report={report} />
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[13.5px] leading-relaxed text-muted">
+                      {coaching
+                        ? "Reading back over the conversation and checking your clinical claims against your documents…"
+                        : "Scored against how you explained the product, handled pushback, and whether your clinical claims match your uploaded documents."}
+                    </p>
+
+                    <div className="mt-4 flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void getCoaching()}
+                        disabled={coaching}
+                        className="rounded-lg bg-accent px-4 py-2 text-[13.5px] font-medium text-accent-ink transition-opacity hover:opacity-90 disabled:opacity-50"
+                      >
+                        {coaching ? "Reviewing…" : "Get coaching"}
+                      </button>
+                      {coaching && (
+                        <span className="flex items-center gap-1.5">
+                          <span className="rp-dot h-1.5 w-1.5 rounded-full bg-muted" />
+                          <span className="rp-dot h-1.5 w-1.5 rounded-full bg-muted" />
+                          <span className="rp-dot h-1.5 w-1.5 rounded-full bg-muted" />
+                        </span>
+                      )}
+                    </div>
+
+                    {coachingRefused && (
+                      <p className="mt-4 rounded-lg border border-caution/35 bg-caution-bg px-4 py-3 text-[13px] leading-relaxed text-ink">
+                        {coachingRefused}
+                      </p>
+                    )}
+                    {coachingError && (
+                      <p className="mt-4 rounded-lg border border-critical/30 bg-critical-bg px-4 py-3 text-[13px] leading-relaxed text-ink">
+                        {coachingError}
+                      </p>
+                    )}
+                  </>
+                )}
               </div>
             </section>
           )}

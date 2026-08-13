@@ -10,11 +10,11 @@
 > API contracts only.
 
 ## CURRENT STATE
-- **Phase:** M12 complete (both halves) → M13 next.
-- **Current milestone:** M13 — Coaching engine (transcript → rubric scoring → report).
-- **Last completed:** M12b — polished roleplay conversation UI. Persona header always visible (specialty/temperament), distinct physician/rep bubbles consistent with /chat, streamed replies, product-cold hint in input. End session → SESSION COMPLETE state with coaching placeholder (reserved slot for M13). Persona held character across further adversarial phrasings (slang, direct role-probe).
+- **Phase:** M13 complete → M14 next.
+- **Current milestone:** M14 — Progress tracking / analytics view.
+- **Last completed:** M13 — coaching engine. Completed transcript → structured coaching report (Structured Outputs / Pydantic): overall + product_knowledge/communication/objection_handling/clinical_accuracy (0–100) + per-dimension narrative + recommendations. Persisted to coaching_reports. Clinical accuracy is DOC-GROUNDED (retrieves product chunks as truth reference) — verified: caught the fabricated 40% mortality claim as unsupported, dinged the score, didn't invent a "correct" figure. Feedback specific/transcript-referenced, honest (45/100, not inflated). Fills M12b coaching placeholder; sources shown for transparency.
 - **Blockers:** none
-- **Notes:** Coaching placeholder built in M12b as the M13 seam — session-complete state ready to receive the coaching report. Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove all dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
+- **Notes:** Coaching only on completed sessions. Doc-grounded clinical accuracy is the key safety design (D-017). Open follow-ups: (1) 127.0.0.1→env var; (2) npm audit M15; (3) jwt_key; (4) stray .git; (5) webhook 500→400; (6) Blob x-api-version 12; (7) remove ALL dev controls before ship; (8) prod table extractor (D-010); (9) source relevance floor/per-doc scoping; (10) session sidebar (deferred).
 
 ## MILESTONES
 
@@ -36,7 +36,7 @@
 ### Week 3 — Simulation + Ship
 - [x] **M11** Roleplay session create + persona system prompts.
 - [x] **M12** Multi-turn roleplay loop with transcript persistence.
-- [ ] **M13** Coaching engine (transcript → rubric scoring → report).
+- [x] **M13** Coaching engine (transcript → rubric scoring → report).
 - [ ] **M14** Progress tracking / analytics view.
 - [ ] **M15** Production deploy (Vercel + Render), env hardening, polish.
       Also: create Demo chat + demo script; promote AI Safety checklist to a skill.

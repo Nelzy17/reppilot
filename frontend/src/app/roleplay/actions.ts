@@ -4,6 +4,7 @@ import { auth } from "@clerk/nextjs/server";
 
 import { API_URL } from "@/lib/config";
 import type {
+  CoachingReport,
   PersonaCatalogue,
   PersonaPreview,
   RoleplaySession,
@@ -109,7 +110,7 @@ export async function previewPersonaAction(
 }
 
 /**
- * DEV/TESTING ONLY (M12 aid) — the physician's opening turn.
+ * The physician's opening turn.
  *
  * Non-streaming, so a Server Action fits and the token stays server-side.
  * Idempotent on the backend: re-opening returns the existing greeting.
@@ -130,7 +131,42 @@ export async function openConversationAction(
   }
 }
 
-/** DEV/TESTING ONLY (M12 aid) — close the session. */
+export type CoachingActionResult =
+  | { ok: true; report: CoachingReport }
+  /** The conversation was too thin to review — not a system failure. */
+  | { ok: false; kind: "too_short"; message: string }
+  | { ok: false; kind: "error"; message: string };
+
+/**
+ * Score a completed session.
+ *
+ * Server-side so the Clerk token never reaches the browser. The backend returns
+ * an existing report rather than re-scoring, so a second click costs nothing.
+ */
+export async function requestCoachingAction(
+  sessionId: string,
+): Promise<CoachingActionResult> {
+  try {
+    const res = await backend(
+      `/roleplay/sessions/${encodeURIComponent(sessionId)}/coaching`,
+      { method: "POST" },
+    );
+    if (!res.ok) {
+      const message = await detailOf(res);
+      if (res.status === 422) return { ok: false, kind: "too_short", message };
+      return { ok: false, kind: "error", message };
+    }
+    return { ok: true, report: (await res.json()) as CoachingReport };
+  } catch {
+    return {
+      ok: false,
+      kind: "error",
+      message: "Couldn't reach RepPilot — check the backend is running.",
+    };
+  }
+}
+
+/** Close the session. */
 export async function endConversationAction(
   sessionId: string,
 ): Promise<{ ok: true; status: string; turnCount: number } | { ok: false; message: string }> {
