@@ -3,11 +3,14 @@ import { auth, currentUser } from "@clerk/nextjs/server";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import DevChat from "@/components/dev-chat";
-import DevSearch from "@/components/dev-search";
 import DocumentList from "@/components/document-list";
+import DocumentStatusPoller from "@/components/document-status-poller";
 import DocumentUpload from "@/components/document-upload";
-import { getDocuments, getMe } from "@/lib/api";
+import { getDocuments } from "@/lib/api";
+
+// A document is still moving through the ingest pipeline until it reaches one
+// of these.
+const TERMINAL_STATUSES = new Set(["ready", "failed"]);
 
 // Resource-based protection: the page itself checks auth. The proxy only
 // enables Clerk; it does not gate this route.
@@ -16,7 +19,11 @@ export default async function DashboardPage() {
   if (!userId) redirect("/sign-in");
 
   const user = await currentUser();
-  const [me, documents] = await Promise.all([getMe(), getDocuments()]);
+  const documents = await getDocuments();
+
+  const pending = documents.ok
+    ? documents.data.filter((d) => !TERMINAL_STATUSES.has(d.status)).length
+    : 0;
 
   return (
     <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8 font-sans">
@@ -54,34 +61,12 @@ export default async function DashboardPage() {
         </Link>
       </div>
 
-      <section className="w-full max-w-xl">
-        <h2 className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
-          GET /me — verified by FastAPI
-        </h2>
-        {me.ok ? (
-          <pre className="overflow-x-auto rounded-lg border border-black/[.08] bg-black/[.03] p-4 text-sm dark:border-white/[.145] dark:bg-white/[.04]">
-            {JSON.stringify(me.data, null, 2)}
-          </pre>
-        ) : (
-          <p className="rounded-lg border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-700 dark:text-red-400">
-            {me.status ? `${me.status} — ` : ""}
-            {me.error}
-          </p>
-        )}
-      </section>
-
       <DocumentUpload />
 
       <section className="w-full max-w-xl">
-        <div className="mb-2 flex items-baseline justify-between gap-3">
-          <h2 className="text-sm font-medium text-zinc-600 dark:text-zinc-400">
-            Your documents
-          </h2>
-          <span className="text-xs text-amber-700 dark:text-amber-400">
-            &ldquo;Process&rdquo; / &ldquo;Embed&rdquo; are temporary testing
-            controls
-          </span>
-        </div>
+        <h2 className="mb-2 text-sm font-medium text-zinc-600 dark:text-zinc-400">
+          Your documents
+        </h2>
         {documents.ok ? (
           <DocumentList documents={documents.data} />
         ) : (
@@ -92,9 +77,7 @@ export default async function DashboardPage() {
         )}
       </section>
 
-      <DevSearch documents={documents.ok ? documents.data : []} />
-
-      <DevChat />
+      <DocumentStatusPoller pending={pending} />
 
       <Link
         href="/"

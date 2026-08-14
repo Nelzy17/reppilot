@@ -122,7 +122,8 @@ export default function DocumentUpload() {
           <div className="rounded-lg border border-green-600/30 bg-green-600/5 p-3 text-green-700 dark:text-green-400">
             <p className="font-medium">Uploaded {state.filename}</p>
             <p className="text-xs opacity-80">
-              status: {state.status} · id: {state.id}
+              Preparing it now — the status below updates when it&rsquo;s ready
+              to use.
             </p>
           </div>
         )}

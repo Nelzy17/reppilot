@@ -1,8 +1,9 @@
 fastapi[standard]==0.141.1
 uvicorn==0.52.0
-# Imported directly by app code (app/routers/documents.py), so pinned explicitly
-# rather than relied on as a transitive dep of fastapi[standard].
+# Imported directly by app code, so pinned explicitly rather than relied on as a
+# transitive dep of fastapi[standard].
 httpx==0.28.1
+pydantic==2.13.4
 
 # Database (M2)
 sqlalchemy[asyncio]==2.0.51
@@ -16,11 +17,15 @@ clerk-backend-api==6.0.1
 # Webhooks (M4)
 svix==1.99.1
 
-# Blob storage (M5)
-vercel_blob==0.4.2
+# Blob storage (M5) is called over plain HTTP with httpx — see
+# _put_blob_private in app/routers/documents.py for why the vercel_blob wrapper
+# could not be used. No SDK dependency here on purpose.
 
 # PDF parsing + chunking (M6). pymupdf4llm is AGPL-licensed.
+# pymupdf is pinned as well: app/services/pdf_processing.py imports it directly
+# for page_count and the document handle, not only through pymupdf4llm.
 pymupdf4llm==1.28.0
+pymupdf==1.28.0
 tiktoken==0.13.0
 
 # Embeddings + vector store (M7). Official SDKs, used directly (D-002: no LangChain).

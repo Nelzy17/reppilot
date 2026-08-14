@@ -1,9 +1,7 @@
 import { Show, SignInButton, UserButton } from "@clerk/nextjs";
 import Link from "next/link";
 
-// 127.0.0.1, not localhost: Node resolves "localhost" to ::1 (IPv6) first, while
-// uvicorn binds to 127.0.0.1 (IPv4) by default — server-side fetch would ECONNREFUSED.
-const API_URL = "http://127.0.0.1:8000";
+import { API_URL } from "@/lib/config";
 
 // Server-side only. `fetch` is uncached by default in Next 16, so this hits the
 // API on every request.

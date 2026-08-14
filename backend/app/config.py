@@ -68,9 +68,9 @@ class Settings(BaseSettings):
     # so each ngrok/production URL has its own value.
     CLERK_WEBHOOK_SECRET: str = ""
 
-    # Vercel Blob static R/W token (M5). Passed explicitly to the vercel_blob
-    # wrapper rather than relying on its os.environ lookup: pydantic-settings
-    # reads .env into this object, it does not export into the process env.
+    # Vercel Blob static R/W token (M5). Read from here and passed explicitly on
+    # each request: pydantic-settings loads .env into this object, it does not
+    # export into the process env, so an os.environ lookup would come up empty.
     BLOB_READ_WRITE_TOKEN: str = ""
 
     # Embeddings + vector store (M7).
@@ -87,6 +87,28 @@ class Settings(BaseSettings):
 
     # Chat/generation model (M9). Swappable via .env without a code change.
     CHAT_MODEL: str = "gpt-4o-mini"
+
+    # Browser origins allowed to call this API (M15). Comma-separated so one
+    # env var can carry the production domain plus any preview domains. The
+    # deployed frontend origin goes here; the default keeps local dev working.
+    FRONTEND_URL: str = "http://localhost:3000"
+
+    @property
+    def cors_origins(self) -> list[str]:
+        """FRONTEND_URL parsed into a de-duplicated origin list.
+
+        Credentialed CORS forbids the "*" wildcard, and we send Authorization
+        headers, so origins must be enumerated. Order is preserved to keep the
+        allow-list readable in logs.
+        """
+        seen: dict[str, None] = {}
+        for origin in self.FRONTEND_URL.split(","):
+            cleaned = origin.strip().rstrip("/")
+            if cleaned and cleaned != "*":
+                seen[cleaned] = None
+        # Never end up with an empty list: that would silently block every
+        # browser call with no obvious cause.
+        return list(seen) or ["http://localhost:3000"]
 
     @property
     def async_database_url(self) -> str:

@@ -13,6 +13,7 @@ from typing import Any
 import httpx
 from fastapi import (
     APIRouter,
+    BackgroundTasks,
     Depends,
     File,
     HTTPException,
@@ -24,7 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.clerk import get_current_user_id
 from app.config import get_settings
-from app.db.session import get_db
+from app.db.session import AsyncSessionLocal, get_db
 from app.models import Document, DocumentChunk, User
 from app.services.chunking import chunk_markdown, has_meaningful_text
 from app.services.embeddings import EmbeddingError, embed_texts
@@ -173,8 +174,44 @@ async def _read_capped(upload: UploadFile) -> bytes:
     return b"".join(chunks)
 
 
+async def _ingest_in_background(document_id: uuid.UUID, clerk_user_id: str) -> None:
+    """Run process -> embed for a freshly uploaded document, out of band (M15).
+
+    Replaces the M6/M7 dev buttons: an upload now carries itself all the way to
+    'ready' with no manual step. Both stages are the same endpoint functions the
+    routes expose, called directly, so there is one implementation and the
+    endpoints remain available for a retry.
+
+    A stage that fails has already flipped the row to 'failed' via _mark_failed;
+    this swallows the exception because nothing is listening — the response went
+    out long ago. The document's status is the channel that reports the outcome.
+
+    Each stage gets its own session: they commit independently, and a rollback
+    in one must not discard the other's work.
+    """
+    for stage, run in (("process", process_document), ("embed", embed_document)):
+        try:
+            async with AsyncSessionLocal() as db:
+                await run(
+                    document_id=document_id, clerk_user_id=clerk_user_id, db=db
+                )
+        except HTTPException as exc:
+            logger.warning(
+                "Auto-%s failed for document %s: %s", stage, document_id, exc.detail
+            )
+            return
+        except Exception:
+            logger.exception(
+                "Unexpected auto-%s error for document %s", stage, document_id
+            )
+            return
+
+    logger.info("Auto-ingest complete for document %s", document_id)
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def upload_document(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     clerk_user_id: str = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
@@ -260,6 +297,11 @@ async def upload_document(
     await db.refresh(document)
 
     logger.info("Stored document %s for user %s", document.id, user.id)
+
+    # Runs after this response is sent, so the client is not held for the parse
+    # and the embedding round-trip. The row is already committed, so the task
+    # can find it.
+    background_tasks.add_task(_ingest_in_background, document.id, clerk_user_id)
 
     return {
         "id": str(document.id),
@@ -401,7 +443,11 @@ async def process_document(
             ]
         )
         document.page_count = page_count
-        document.status = "ready"
+        # Not 'ready': chunks exist but nothing is searchable until the vectors
+        # are in Qdrant. Since M15 auto-runs embedding straight after, 'ready'
+        # is reserved for the end of that pipeline so the badge never claims a
+        # document is usable while it still has no vectors.
+        document.status = "embedding"
         await db.commit()
     except Exception as exc:
         logger.exception("Failed to persist chunks for document %s", document_id)

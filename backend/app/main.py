@@ -1,6 +1,9 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.config import get_settings
 from app.routers import (
     chat,
     documents,
@@ -12,13 +15,20 @@ from app.routers import (
     webhooks,
 )
 
+logger = logging.getLogger(__name__)
+
 SERVICE_NAME = "reppilot-api"
 
 app = FastAPI(title="RepPilot API")
 
+# Env-driven (M15): set FRONTEND_URL to the deployed frontend origin, or to a
+# comma-separated list to allow preview domains alongside it.
+_cors_origins = get_settings().cors_origins
+logger.info("CORS allow_origins: %s", _cors_origins)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

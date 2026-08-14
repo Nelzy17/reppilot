@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { API_URL } from "@/lib/config";
 
 /**
- * DEV/TESTING ONLY (M9b-1 aid) — SSE pass-through to the FastAPI backend.
+ * SSE pass-through to the FastAPI backend. Production path for /chat.
  *
  * Why this exists: a typewriter effect needs the browser to read the response
  * body incrementally, and a Server Action cannot hand back an incremental

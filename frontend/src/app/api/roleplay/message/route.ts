@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { API_URL } from "@/lib/config";
 
 /**
- * DEV/TESTING ONLY (M12 aid) — SSE pass-through for a roleplay turn.
+ * SSE pass-through for a roleplay turn. Production path for /roleplay.
  *
  * Same reasoning as /api/chat/stream: the browser needs to read the reply
  * incrementally, and a Server Action cannot return an incremental stream, so
