@@ -85,6 +85,18 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSIONS: int = 1536
     QDRANT_COLLECTION: str = "reppilot_chunks"
 
+    # How many chunks are embedded and upserted per pass (M15). This is the main
+    # lever on peak memory during ingest: a vector is ~1536 Python floats
+    # (~49 KB), and a batch is briefly held three times over — the OpenAI
+    # response, the point dicts, and the Qdrant PointStructs. Embedding a whole
+    # document at once is what pushed a 512 MB instance into OOM.
+    EMBED_BATCH_SIZE: int = 32
+
+    # A document still 'processing'/'embedding' after this long cannot have a
+    # live task behind it — background tasks die with the process, so a restart
+    # mid-ingest would otherwise strand it forever (M15).
+    INGEST_STALE_MINUTES: int = 30
+
     # Chat/generation model (M9). Swappable via .env without a code change.
     CHAT_MODEL: str = "gpt-4o-mini"
 

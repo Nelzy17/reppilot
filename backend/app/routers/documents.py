@@ -5,6 +5,7 @@ The file passes through this service: the frontend never talks to Blob
 directly, which keeps the UI-only contract and leaves the bytes here to parse.
 """
 
+import gc
 import logging
 import re
 import uuid
@@ -158,20 +159,21 @@ async def _read_capped(upload: UploadFile) -> bytes:
     Read incrementally rather than trusting Content-Length, which a client
     controls and can understate.
     """
-    chunks: list[bytes] = []
-    total = 0
+    # A bytearray grows in place. Accumulating into a list and joining at the
+    # end would hold the pieces and the joined copy at the same time — two full
+    # file sizes at peak, for no benefit.
+    buffer = bytearray()
     while True:
         chunk = await upload.read(CHUNK_BYTES)
         if not chunk:
             break
-        total += len(chunk)
-        if total > MAX_UPLOAD_BYTES:
+        if len(buffer) + len(chunk) > MAX_UPLOAD_BYTES:
             raise HTTPException(
                 status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                 detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
             )
-        chunks.append(chunk)
-    return b"".join(chunks)
+        buffer.extend(chunk)
+    return bytes(buffer)
 
 
 async def _ingest_in_background(document_id: uuid.UUID, clerk_user_id: str) -> None:
@@ -195,6 +197,10 @@ async def _ingest_in_background(document_id: uuid.UUID, clerk_user_id: str) -> N
                 await run(
                     document_id=document_id, clerk_user_id=clerk_user_id, db=db
                 )
+            # Parsing releases the PDF bytes and the extracted markdown at once.
+            # Collecting between stages hands those arenas back before the
+            # embedding stage starts allocating (M15: 512 MB instance).
+            gc.collect()
         except HTTPException as exc:
             logger.warning(
                 "Auto-%s failed for document %s: %s", stage, document_id, exc.detail
@@ -319,6 +325,23 @@ async def upload_document(
 MIN_EXTRACTED_CHARS = 50
 
 
+async def _discard_document_points(document_id: uuid.UUID) -> None:
+    """Remove every vector this document has in Qdrant. Best effort.
+
+    Embedding now upserts batch by batch instead of once at the end, so a run
+    that fails half way leaves real, searchable vectors behind for a document
+    that is about to be marked 'failed'. Clearing them restores the property the
+    single-shot upsert had for free: a document is either fully embedded or has
+    no vectors at all.
+    """
+    try:
+        await delete_stale_points(document_id, keep_below_index=0)
+    except Exception:  # pragma: no cover - cleanup must not mask the real error
+        logger.exception(
+            "Could not clear partial vectors for document %s", document_id
+        )
+
+
 async def _mark_failed(db: AsyncSession, document_id: uuid.UUID) -> None:
     """Flip the document to 'failed' in its own transaction.
 
@@ -388,15 +411,14 @@ async def process_document(
             detail="Unexpected error while processing the PDF",
         ) from exc
 
-    stripped = (markdown or "").strip()
-    if (
-        len(stripped) < MIN_EXTRACTED_CHARS
-        or not has_meaningful_text(stripped)
-    ):
+    # Rebind rather than introducing a second name: `markdown` and a separate
+    # `stripped` would keep two full copies of the document text alive at once.
+    markdown = (markdown or "").strip()
+    if len(markdown) < MIN_EXTRACTED_CHARS or not has_meaningful_text(markdown):
         logger.warning(
             "Document %s extracted only %d chars; treating as no text",
             document_id,
-            len(stripped),
+            len(markdown),
         )
         await _mark_failed(db, document_id)
         raise HTTPException(
@@ -409,7 +431,7 @@ async def process_document(
         )
 
     try:
-        chunks = chunk_markdown(stripped)
+        chunks = chunk_markdown(markdown)
     except Exception as exc:
         logger.exception("Chunking failed for document %s", document_id)
         await _mark_failed(db, document_id)
@@ -417,6 +439,9 @@ async def process_document(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Unexpected error while splitting the document into chunks",
         ) from exc
+    finally:
+        # The chunks now carry the text; the source markdown is dead weight.
+        del markdown
 
     if not chunks:
         logger.warning("Chunking produced no chunks for document %s", document_id)
@@ -505,116 +530,140 @@ async def embed_document(
             status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
         )
 
-    chunks = (
-        (
-            await db.execute(
-                select(DocumentChunk)
-                .where(DocumentChunk.document_id == document.id)
-                .order_by(DocumentChunk.chunk_index)
-            )
+    # Ids and indexes only — deliberately not the content. Loading every chunk's
+    # text up front, then every vector, is what made peak memory scale with the
+    # document instead of with the batch size.
+    chunk_rows = (
+        await db.execute(
+            select(DocumentChunk.id, DocumentChunk.chunk_index)
+            .where(DocumentChunk.document_id == document.id)
+            .order_by(DocumentChunk.chunk_index)
         )
-        .scalars()
-        .all()
-    )
+    ).all()
 
     # Refuse before spending anything at OpenAI. Status is left alone: an
     # unchunked document has not failed at embedding, it simply is not ready
     # for it.
-    if not chunks:
+    if not chunk_rows:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Document has no chunks; run /process first",
         )
 
+    settings = get_settings()
+    total = len(chunk_rows)
+    batch_size = max(1, settings.EMBED_BATCH_SIZE)
+    # Deterministic ids mean this is only a record of what to link afterwards,
+    # not something that has to survive a partial run: two UUIDs per chunk.
+    links: list[dict[str, Any]] = []
+    embedded = 0
+
     try:
-        vectors = await embed_texts([chunk.content for chunk in chunks])
+        await ensure_collection()
+
+        for start in range(0, total, batch_size):
+            window = chunk_rows[start : start + batch_size]
+            ids = [row.id for row in window]
+
+            # Pull this window's text only, then let it go at the end of the
+            # iteration along with its vectors.
+            contents = dict(
+                (
+                    await db.execute(
+                        select(DocumentChunk.id, DocumentChunk.content).where(
+                            DocumentChunk.id.in_(ids)
+                        )
+                    )
+                ).all()
+            )
+
+            texts = [contents[row.id] for row in window]
+            vectors = await embed_texts(texts)
+
+            # Belt and braces: embed_texts already checks this, but a mismatch
+            # would silently pair vectors with the wrong chunks.
+            if len(vectors) != len(window):
+                raise EmbeddingError(
+                    f"got {len(vectors)} vectors for {len(window)} chunks"
+                )
+
+            points = [
+                {
+                    "id": point_id_for(document.id, row.chunk_index),
+                    "vector": vector,
+                    "payload": {
+                        "document_id": str(document.id),
+                        "chunk_index": row.chunk_index,
+                        "user_id": str(user.id),
+                    },
+                }
+                for row, vector in zip(window, vectors)
+            ]
+
+            await upsert_chunk_points(points)
+
+            links.extend(
+                {"id": row.id, "qdrant_point_id": point["id"]}
+                for row, point in zip(window, points)
+            )
+            embedded += len(window)
+
+            # Drop the batch's three large representations before the next pass:
+            # the API response vectors, the point dicts, and the source text.
+            del contents, texts, vectors, points
+
+        # If a previous run produced more chunks than this one, drop the surplus.
+        await delete_stale_points(document.id, keep_below_index=total)
+        stored = await count_document_points(document.id)
     except EmbeddingError as exc:
         logger.warning("Embedding failed for document %s: %s", document_id, exc)
+        await _discard_document_points(document_id)
         await _mark_failed(db, document_id)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Could not generate embeddings: {exc}",
         ) from exc
-    except Exception as exc:
-        logger.exception("Unexpected embedding error for document %s", document_id)
-        await _mark_failed(db, document_id)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unexpected error while generating embeddings",
-        ) from exc
-
-    # Belt and braces: embed_texts already checks this, but a mismatch here
-    # would silently pair vectors with the wrong chunks.
-    if len(vectors) != len(chunks):
-        logger.error(
-            "Embedding count mismatch for %s: %d vectors for %d chunks",
-            document_id,
-            len(vectors),
-            len(chunks),
-        )
-        await _mark_failed(db, document_id)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                f"Embedding count mismatch: got {len(vectors)} vectors for "
-                f"{len(chunks)} chunks"
-            ),
-        )
-
-    points = [
-        {
-            "id": point_id_for(document.id, chunk.chunk_index),
-            "vector": vector,
-            "payload": {
-                "document_id": str(document.id),
-                "chunk_index": chunk.chunk_index,
-                "user_id": str(user.id),
-            },
-        }
-        for chunk, vector in zip(chunks, vectors)
-    ]
-
-    try:
-        await ensure_collection()
-        await upsert_chunk_points(points)
-        # If a previous run produced more chunks than this one, drop the surplus.
-        await delete_stale_points(document.id, keep_below_index=len(chunks))
-        stored = await count_document_points(document.id)
     except VectorStoreError as exc:
         logger.warning("Qdrant write failed for document %s: %s", document_id, exc)
+        await _discard_document_points(document_id)
         await _mark_failed(db, document_id)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Could not store vectors: {exc}",
         ) from exc
     except Exception as exc:
-        logger.exception("Unexpected vector store error for document %s", document_id)
+        logger.exception("Unexpected embedding error for document %s", document_id)
+        await _discard_document_points(document_id)
         await _mark_failed(db, document_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Unexpected error while storing vectors",
+            detail="Unexpected error while embedding the document",
         ) from exc
 
-    if stored != len(chunks):
+    if stored != total:
         logger.error(
             "Qdrant holds %d points for document %s but there are %d chunks",
             stored,
             document_id,
-            len(chunks),
+            total,
         )
+        await _discard_document_points(document_id)
         await _mark_failed(db, document_id)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=(
-                f"Vector store holds {stored} points for {len(chunks)} chunks; "
+                f"Vector store holds {stored} points for {total} chunks; "
                 "refusing to mark the document ready"
             ),
         )
 
     try:
-        for chunk, point in zip(chunks, points):
-            chunk.qdrant_point_id = point["id"]
-        await db.flush()
+        # One executemany rather than loading every chunk as an ORM object
+        # purely to set a single column on it.
+        # ORM bulk UPDATE by primary key: one executemany, keyed on 'id'. Note
+        # the dicts must use the real column names — a statement against an ORM
+        # entity takes this path, so custom bindparam names are rejected.
+        await db.execute(update(DocumentChunk), links)
 
         # Never mark ready on a partially-linked document.
         unlinked = (
@@ -634,25 +683,27 @@ async def embed_document(
         await db.commit()
     except Exception as exc:
         logger.exception("Failed to link point ids for document %s", document_id)
+        await _discard_document_points(document_id)
         await _mark_failed(db, document_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to record vector ids against the chunks",
         ) from exc
 
-    settings = get_settings()
     logger.info(
-        "Embedded document %s: %d chunk(s) -> %s",
+        "Embedded document %s: %d chunk(s) in %d batch(es) of %d -> %s",
         document_id,
-        len(chunks),
+        total,
+        (total + batch_size - 1) // batch_size,
+        batch_size,
         settings.QDRANT_COLLECTION,
     )
 
     return {
         "id": str(document.id),
         "status": document.status,
-        "chunk_count": len(chunks),
-        "embedded_count": len(vectors),
+        "chunk_count": total,
+        "embedded_count": embedded,
         "points_in_collection": stored,
         "model": settings.EMBEDDING_MODEL,
         "dimensions": settings.EMBEDDING_DIMENSIONS,

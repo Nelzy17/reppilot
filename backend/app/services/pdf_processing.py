@@ -78,7 +78,15 @@ async def extract_document_markdown(document, token: str | None = None) -> tuple
     if not pdf_bytes:
         raise PdfProcessingError("Stored file is empty")
 
-    markdown, page_count = await run_in_threadpool(_extract_sync, pdf_bytes)
+    try:
+        markdown, page_count = await run_in_threadpool(_extract_sync, pdf_bytes)
+    finally:
+        # Up to 25 MB. pymupdf holds the stream until doc.close(), which
+        # _extract_sync has already done, so nothing references it after this.
+        # Dropping it here keeps the raw bytes and the extracted markdown from
+        # being resident at the same time (M15: 512 MB instance).
+        del pdf_bytes
+
     logger.info(
         "Extracted %d chars of markdown from %d page(s) for document %s",
         len(markdown),
