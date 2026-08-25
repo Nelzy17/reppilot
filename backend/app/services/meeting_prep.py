@@ -13,6 +13,7 @@ One model call. Direct OpenAI SDK + Qdrant (decision D-002: no LangChain).
 """
 
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -32,20 +33,75 @@ PER_QUERY_K = 5
 MAX_CONTEXT_PASSAGES = 12
 TEMPERATURE = 0.2  # a shade of phrasing variety, still effectively extractive
 
+# Why prep needs a coverage check that chat does not
+# -------------------------------------------------
 # The generated queries carry generic clinical vocabulary — "contraindications",
 # "dosage and administration" — which matches any drug label. Measured against a
 # Cardovex-only library, a product absent from the documents still scored 0.28
-# to 0.41 on those queries, clearing the 0.2 chat threshold and producing a
-# confident brief about the wrong product. The bare product name separates
-# cleanly (Cardovex 0.6685 present; Zephyrol 0.1633 and Humira 0.1602 absent),
-# so it is used as an anchor: unless the library recognises the product itself,
-# there is no coverage regardless of how well the generic queries scored.
+# to 0.41 on those queries, clearing the 0.2 chat threshold. Without a further
+# check, prep would build a confident brief about the wrong product's label.
 #
-# 0.35 sits ~2x above the observed noise floor and well under the signal. It
-# errs towards refusing: a rep wrongly told to check the product name loses a
-# minute, whereas a brief built from a different product's label could be read
-# aloud to a physician.
-PRODUCT_ANCHOR_MIN_SCORE = 0.35
+# M10 handled that with an embedding "anchor": search the bare product name and
+# require >= 0.35. That was wrong, and it is what made prep refuse documents
+# chat answers from happily. A one-word query is a degenerate embedding — its
+# similarity to a 250-350 token chunk of clinical prose swings on how the name
+# sits among the surrounding text, not on whether the document covers it. The
+# 0.6685 measured for Cardovex during M10 was a property of that one test
+# document, not of the model, and it did not generalise. Applied as a hard
+# pre-gate at top_k=1, a below-0.35 reading vetoed retrieval that was otherwise
+# scoring 0.4-0.5.
+#
+# The question being asked is lexical, so it is now answered lexically: do the
+# passages retrieved at chat's own threshold actually name the product? That is
+# a direct reading of "the library covers this product" rather than a proxy for
+# it, it cannot be moved by embedding-space noise, and it costs one fewer
+# round trip. Zorblax still refuses — Cardovex's label does not contain the
+# word "Zorblax" no matter how well its safety section scores.
+MIN_PRODUCT_TERM_CHARS = 4
+
+_NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]+")
+
+
+def _normalise(text: str) -> str:
+    """Lowercase, with every run of punctuation/whitespace flattened to a space.
+
+    So "CARDOVEX-XR" in a document matches "Cardovex XR" from the form.
+    """
+    return _NON_ALPHANUMERIC.sub(" ", text.lower()).strip()
+
+
+def _product_terms(product: str) -> list[str]:
+    """Strings whose presence in a passage counts as naming the product.
+
+    The full name first. For a multi-word name its distinctive words are also
+    accepted, so a document that says "Cardovex" still covers a meeting logged
+    against "Cardovex XR". Short words are dropped — they carry no identity and
+    would match almost any label.
+    """
+    full = _normalise(product)
+    if not full:
+        return []
+
+    terms = [full]
+    for word in full.split():
+        if len(word) >= MIN_PRODUCT_TERM_CHARS and word not in terms:
+            terms.append(word)
+    return terms
+
+
+def _naming_passage(
+    passages: list[dict[str, Any]], product: str
+) -> dict[str, Any] | None:
+    """The first retrieved passage that names the product, or None."""
+    terms = _product_terms(product)
+    if not terms:
+        return None
+
+    for passage in passages:
+        body = _normalise(passage.get("content") or "")
+        if any(term in body for term in terms):
+            return passage
+    return None
 
 
 class Objection(BaseModel):
@@ -154,29 +210,11 @@ async def gather_context(
 ) -> list[dict[str, Any]]:
     """Retrieve across several queries and merge, keeping the best score per chunk.
 
-    Gated on the product anchor first — see PRODUCT_ANCHOR_MIN_SCORE. Returns
-    an empty list when the library does not recognise the product, which the
-    caller turns into a refusal.
+    Retrieval itself is exactly chat's: same ``retrieve``, same user scoping,
+    same 0.2 threshold, no additional Qdrant filter. Returns an empty list only
+    when nothing was retrieved at all, or when nothing retrieved names the
+    product — which the caller turns into a refusal.
     """
-    try:
-        anchor_hits = await retrieve(
-            db,
-            user_id,
-            product.strip(),
-            top_k=1,
-            min_score=PRODUCT_ANCHOR_MIN_SCORE,
-        )
-    except ChatError as exc:
-        raise MeetingPrepError(str(exc)) from exc
-
-    if not anchor_hits:
-        logger.info(
-            "Product %r did not clear the anchor threshold %.2f; no coverage",
-            product,
-            PRODUCT_ANCHOR_MIN_SCORE,
-        )
-        return []
-
     merged: dict[str, dict[str, Any]] = {}
 
     for query in build_queries(product, specialty, objective):
@@ -192,7 +230,50 @@ async def gather_context(
             if existing is None or passage["score"] > existing["score"]:
                 merged[passage["chunk_id"]] = passage
 
+    if not merged:
+        # Same condition chat refuses on: retrieval genuinely found nothing.
+        logger.info(
+            "Nothing cleared %.2f for product %r; no coverage", min_score, product
+        )
+        raise NoCoverageError(
+            "Nothing in your documents matched this meeting. Upload a document "
+            f'covering "{product}", or check that it has finished processing.'
+        )
+
     ranked = sorted(merged.values(), key=lambda p: p["score"], reverse=True)
+
+    # Checked against everything retrieved, not just the top slice: coverage is
+    # a fact about the library, so a naming passage ranked 15th still proves it.
+    naming = _naming_passage(ranked, product)
+    if naming is None:
+        logger.info(
+            "Retrieved %d passage(s) for product %r (best score %.4f, best "
+            "source %s) but none name it; treating as no coverage",
+            len(ranked),
+            product,
+            ranked[0]["score"],
+            ranked[0]["document"],
+        )
+        # Deliberately distinct from the message above. These two refusals have
+        # different fixes, and telling them apart is the difference between a
+        # rep re-checking a spelling and a rep uploading a document they already
+        # have.
+        raise NoCoverageError(
+            f'Your documents came back with {len(ranked)} relevant passage(s), '
+            f'but none of them mention "{product}" by name — the closest was '
+            f"{ranked[0]['document']}. If that document does cover this "
+            "product, check the name matches how it is written there (a brand "
+            "name versus a generic name, for example)."
+        )
+
+    logger.info(
+        "Product %r named in %s (chunk %d, score %.4f); %d passage(s) retrieved",
+        product,
+        naming["document"],
+        naming["chunk_index"],
+        naming["score"],
+        len(ranked),
+    )
     return ranked[:MAX_CONTEXT_PASSAGES]
 
 
@@ -214,19 +295,15 @@ async def generate_brief(
 ) -> BriefResult:
     """Produce a grounded brief, or raise NoCoverageError if the documents
     cannot support one."""
+    # Raises NoCoverageError itself, with a message naming which of the two
+    # coverage failures happened. The model is never called in either case —
+    # that is the hallucination guard, enforced in code.
     passages = await gather_context(db, user_id, product, specialty, objective)
 
-    if not passages:
-        # The guard: no supporting text means no brief. The model is not called.
-        logger.info(
-            "No passage cleared %.2f for product %r; refusing to generate a brief",
-            MIN_SCORE,
-            product,
-        )
+    if not passages:  # defensive: gather_context should have raised
         raise NoCoverageError(
-            f"Your documents don't contain enough about \"{product}\" to build a "
-            "grounded brief. Upload a document covering this product, or check "
-            "the product name matches how it appears in your documents."
+            f'Your documents don\'t contain enough about "{product}" to build a '
+            "grounded brief."
         )
 
     settings = get_settings()
